@@ -1,0 +1,472 @@
+{
+  "DRY_RUN": true,
+  "GEE_PROJECT": "ee-ishansinhagzb",
+  "MASTER_CRS": "EPSG:5070",
+  "MASTER_SCALE": {
+    "01a": 1000,
+    "01b": 1000,
+    "01d": 1000,
+    "01e": 1000,
+    "01f": 1000,
+    "01g": 1000,
+    "01h": 1000,
+    "01i": 1000,
+    "01j": 30,
+    "01k": 1000,
+    "01l": 1000,
+    "01m": 30,
+    "01n": 30,
+    "01o": 30,
+    "01p": 1000,
+    "01q": 1000,
+    "01r": 1000,
+    "01s": 1000
+  },
+  "AOI_BUFFER_METERS": 1000,
+  "START_DATE": "2000-01-01",
+  "END_DATE": "2024-09-30",
+  "datasets": {
+    "01a": {
+      "name": "GRACE / GRACE-FO Mascons",
+      "asset_id": "NASA/GRACE/MASS_GRIDS/MASCON_CRI",
+      "vars": "TWSA",
+      "bands": [
+        "lwe_thickness"
+      ],
+      "scale": 1000,
+      "kind": "collection",
+      "start": "2002-04-01",
+      "end": "2024-09-30",
+      "folder": "01a_grace_mascons",
+      "usage": "Basin-scale storage constraint and slow driver; use for closure and screening.",
+      "drive_subfolder": "01_gee_rasters/01a_grace_mascons"
+    },
+    "01b": {
+      "name": "SMAP L4 Root Zone Soil Moisture and L3 VOD",
+      "asset_id": [
+        "NASA/SMAP/SPL4SMGP/007",
+        "NASA/SMAP/SPL3SMP_E/005"
+      ],
+      "vars": "MULTI",
+      "bands": [
+        "sm_rootzone",
+        "vegetation_water_content"
+      ],
+      "scale": 1000,
+      "kind": "collection_group",
+      "start": "2015-04-01",
+      "end": "2024-09-30",
+      "folder": "01b_smap_l4_rzsm",
+      "usage": "Climate control and vegetation water signal for dry-down decoupling analysis.",
+      "drive_subfolder": "01_gee_rasters/01b_smap_l4_rzsm"
+    },
+    "01d": {
+      "name": "TROPOMI SIF",
+      "asset_id": "projects/sat-io/open-datasets/TROPOSIF",
+      "vars": "SIF",
+      "bands": [
+        "SIF"
+      ],
+      "scale": 1000,
+      "kind": "collection",
+      "start": "2018-05-01",
+      "end": "2024-09-30",
+      "folder": "01d_tropomi_sif",
+      "usage": "Independent carbon signal for recent-period decoupling analysis.",
+      "drive_subfolder": "01_gee_rasters/01d_tropomi_sif"
+    },
+    "01e": {
+      "name": "ERA5-Land",
+      "asset_id": "ECMWF/ERA5_LAND/HOURLY",
+      "vars": "MULTI",
+      "bands": [
+        "total_precipitation",
+        "temperature_2m",
+        "dewpoint_temperature_2m",
+        "surface_net_solar_radiation"
+      ],
+      "scale": 1000,
+      "kind": "collection",
+      "start": "2002-01-01",
+      "end": "2024-09-30",
+      "folder": "01e_era5_land",
+      "usage": "Meteorological controls for expected-function matching.",
+      "drive_subfolder": "01_gee_rasters/01e_era5_land"
+    },
+    "01f": {
+      "name": "gridMET",
+      "asset_id": "IDAHO_EPSCOR/GridMET",
+      "vars": "MULTI",
+      "bands": [
+        "pr",
+        "vpd",
+        "etr",
+        "tmmx",
+        "tmmn",
+        "vs"
+      ],
+      "scale": 1000,
+      "kind": "collection",
+      "start": "1979-01-01",
+      "end": "2024-09-30",
+      "folder": "01f_gridmet",
+      "usage": "Primary climate grid for inference and matching.",
+      "drive_subfolder": "01_gee_rasters/01f_gridmet"
+    },
+    "01g": {
+      "name": "MODIS NDVI / EVI",
+      "asset_id": "MODIS/061/MOD13A2",
+      "vars": "MULTI",
+      "bands": [
+        "NDVI",
+        "EVI",
+        "DetailedQA",
+        "SummaryQA",
+        "pixel_reliability"
+      ],
+      "scale": 1000,
+      "kind": "collection",
+      "start": "2000-02-18",
+      "end": "2024-09-30",
+      "folder": "01g_modis_ndvi_evi",
+      "usage": "Long-record context, screening, and reversibility testing.",
+      "drive_subfolder": "01_gee_rasters/01g_modis_ndvi_evi"
+    },
+    "01h": {
+      "name": "MODIS Land Cover",
+      "asset_id": "MODIS/061/MCD12Q1",
+      "vars": "MULTI",
+      "bands": [
+        "LC_Type1",
+        "LC_Prop1_Assessment",
+        "LC_Prop1"
+      ],
+      "scale": 1000,
+      "kind": "collection",
+      "start": "2001-01-01",
+      "end": "2023-12-31",
+      "folder": "01h_modis_landcover",
+      "usage": "Vegetation-type and crop versus natural stratification.",
+      "drive_subfolder": "01_gee_rasters/01h_modis_landcover"
+    },
+    "01i": {
+      "name": "SRTM DEM",
+      "asset_id": "USGS/SRTMGL1_003",
+      "vars": "ELEV",
+      "bands": [
+        "elevation"
+      ],
+      "scale": 1000,
+      "kind": "image",
+      "start": "2000-01-01",
+      "end": "2000-12-31",
+      "folder": "01i_srtm_dem",
+      "usage": "Topographic-position stratification.",
+      "drive_subfolder": "01_gee_rasters/01i_srtm_dem"
+    },
+    "01j": {
+      "name": "USDA CDL",
+      "asset_id": "USDA/NASS/CDL",
+      "vars": "CROP",
+      "bands": [
+        "cropland"
+      ],
+      "scale": 30,
+      "kind": "collection",
+      "start": "2008-01-01",
+      "end": "2024-12-31",
+      "folder": "01j_usda_cdl",
+      "usage": "Crop type and irrigation-control stratification.",
+      "drive_subfolder": "01_gee_rasters/01j_usda_cdl"
+    },
+    "01k": {
+      "name": "GFSAD",
+      "asset_id": "USGS/GFSAD/GLASS/CropMasks/2000",
+      "vars": "IRRIG",
+      "bands": [
+        "landcover"
+      ],
+      "scale": 1000,
+      "kind": "image",
+      "start": "2000-01-01",
+      "end": "2000-12-31",
+      "folder": "01k_gfsad",
+      "usage": "Managed versus rainfed area control.",
+      "drive_subfolder": "01_gee_rasters/01k_gfsad"
+    },
+    "01l": {
+      "name": "Aridity Index",
+      "asset_id": "projects/sat-io/open-datasets/CGIAR_ARIDITY",
+      "vars": "ARID",
+      "bands": [
+        "b1"
+      ],
+      "scale": 1000,
+      "kind": "image",
+      "start": "1970-01-01",
+      "end": "2000-12-31",
+      "folder": "01l_aridity_index",
+      "usage": "Matching covariate and failure-threshold stratification.",
+      "drive_subfolder": "01_gee_rasters/01l_aridity_index"
+    },
+    "01m": {
+      "name": "ESA WorldCover",
+      "asset_id": "ESA/WorldCover/v200",
+      "vars": "LC",
+      "bands": [
+        "Map"
+      ],
+      "scale": 30,
+      "kind": "image",
+      "start": "2021-01-01",
+      "end": "2021-12-31",
+      "folder": "01m_worldcover",
+      "usage": "High-resolution natural versus managed land-cover mask.",
+      "drive_subfolder": "01_gee_rasters/01m_worldcover"
+    },
+    "01n": {
+      "name": "Landsat 8/9 Surface Reflectance",
+      "asset_id": "LANDSAT/LC08/C02/T1_L2",
+      "vars": "MULTI",
+      "bands": [
+        "SR_B1",
+        "SR_B2",
+        "SR_B3",
+        "SR_B4",
+        "SR_B5",
+        "SR_B6",
+        "SR_B7",
+        "ST_B10",
+        "QA_PIXEL",
+        "QA_RADSAT"
+      ],
+      "scale": 30,
+      "kind": "collection",
+      "start": "2013-04-01",
+      "end": "2024-09-30",
+      "folder": "01n_landsat",
+      "usage": "High-resolution spectral context and optional indices.",
+      "drive_subfolder": "01_gee_rasters/01n_landsat"
+    },
+    "01o": {
+      "name": "Sentinel-2 Harmonized",
+      "asset_id": "COPERNICUS/S2_HARMONIZED",
+      "vars": "MULTI",
+      "bands": [
+        "B1",
+        "B2",
+        "B3",
+        "B4",
+        "B5",
+        "B6",
+        "B7",
+        "B8",
+        "B8A",
+        "B9",
+        "B11",
+        "B12",
+        "QA60",
+        "SCL"
+      ],
+      "scale": 30,
+      "kind": "collection",
+      "start": "2017-03-28",
+      "end": "2024-09-30",
+      "folder": "01o_sentinel2",
+      "usage": "Recent high-resolution vegetation context.",
+      "drive_subfolder": "01_gee_rasters/01o_sentinel2"
+    },
+    "01p": {
+      "name": "PML-V2 ET",
+      "asset_id": "projects/sat-io/open-datasets/PML_V2",
+      "vars": "ET",
+      "bands": [
+        "Ec",
+        "Es",
+        "Ei",
+        "ET_water",
+        "ET"
+      ],
+      "scale": 1000,
+      "kind": "collection",
+      "start": "2000-01-01",
+      "end": "2023-12-31",
+      "folder": "01p_pml_v2",
+      "usage": "Longer evaporative-response record.",
+      "drive_subfolder": "01_gee_rasters/01p_pml_v2"
+    },
+    "01q": {
+      "name": "SSEBop ET",
+      "asset_id": "USGS/ssebop/ssebopeta_v4",
+      "vars": "ET",
+      "bands": [
+        "et"
+      ],
+      "scale": 1000,
+      "kind": "collection",
+      "start": "2003-01-01",
+      "end": "2024-09-30",
+      "folder": "01q_ssebop",
+      "usage": "Longer operational evaporative-response record.",
+      "drive_subfolder": "01_gee_rasters/01q_ssebop"
+    },
+    "01r": {
+      "name": "SoilGrids",
+      "asset_id": "projects/soilgrids-isric/",
+      "vars": "MULTI",
+      "bands": [
+        "clay_0-5cm_mean",
+        "sand_0-5cm_mean",
+        "bdod_0-5cm_mean",
+        "soc_0-5cm_mean"
+      ],
+      "scale": 1000,
+      "kind": "image",
+      "start": "2017-01-01",
+      "end": "2017-12-31",
+      "folder": "01r_soilgrids",
+      "usage": "Rooting depth, texture, and soil-water-capacity controls.",
+      "drive_subfolder": "01_gee_rasters/01r_soilgrids"
+    },
+    "01s": {
+      "name": "NASADEM",
+      "asset_id": "NASA/NASADEM_HGT/001",
+      "vars": "ELEV",
+      "bands": [
+        "elevation",
+        "num",
+        "swb"
+      ],
+      "scale": 1000,
+      "kind": "image",
+      "start": "2000-01-01",
+      "end": "2000-12-31",
+      "folder": "01s_nasadem",
+      "usage": "Hydrologic conditioning and topographic position.",
+      "drive_subfolder": "01_gee_rasters/01s_nasadem"
+    }
+  },
+  "independent_datasets": {
+    "02a": {
+      "name": "Ma et al. (2026) Water Table Depth raster",
+      "vars": "WTD",
+      "folder": "02a_ma_wtd_raster",
+      "method": "requests / rioxarray",
+      "endpoint": "REPLACE_WITH_HYDROSHARE_OR_ZENODO_URL",
+      "usage": "Static depth-to-water axis; not a time series.",
+      "drive_subfolder": "02_independent/02a_ma_wtd_raster"
+    },
+    "02b": {
+      "name": "USGS Groundwater Wells (NWIS)",
+      "vars": "WELL",
+      "folder": "02b_usgs_wells",
+      "method": "dataretrieval",
+      "endpoint": "https://waterservices.usgs.gov/nwis/gwlevels/",
+      "usage": "Observed water-table decline and recovery.",
+      "drive_subfolder": "02_independent/02b_usgs_wells"
+    },
+    "02c": {
+      "name": "State Well Networks",
+      "vars": "WELL",
+      "folder": "02c_state_wells",
+      "method": "requests",
+      "endpoint": "https://www3.twdb.texas.gov/apps/waterdatainteractive/",
+      "usage": "State networks augment NWIS spatial coverage.",
+      "drive_subfolder": "02_independent/02c_state_wells"
+    },
+    "02d": {
+      "name": "FLUXNET / AmeriFlux",
+      "vars": "FLUX",
+      "folder": "02d_ameriflux",
+      "method": "ameriflux-api / requests",
+      "endpoint": "REQUIRES_AMERIFLUX_ACCOUNT",
+      "usage": "Independent site validation for buffering and decoupling.",
+      "drive_subfolder": "02_independent/02d_ameriflux"
+    },
+    "02e": {
+      "name": "SAPFLUXNET",
+      "vars": "SAP",
+      "folder": "02e_sapfluxnet",
+      "method": "requests",
+      "endpoint": "REQUIRES_MANUAL_REGISTRATION",
+      "usage": "Independent plant water-use validation.",
+      "drive_subfolder": "02_independent/02e_sapfluxnet"
+    },
+    "02f": {
+      "name": "GLEAM4",
+      "vars": "ET",
+      "folder": "02f_gleam4",
+      "method": "requests / xarray",
+      "endpoint": "REQUIRES_GLEAM_REGISTRATION_URL",
+      "usage": "Reference model product, not independent evidence.",
+      "drive_subfolder": "02_independent/02f_gleam4"
+    },
+    "02g": {
+      "name": "GOSIF",
+      "vars": "SIF",
+      "folder": "02g_gosif",
+      "method": "requests / xarray",
+      "endpoint": "https://www.numericalterra.com/",
+      "usage": "Long-record context and reversibility testing.",
+      "drive_subfolder": "02_independent/02g_gosif"
+    },
+    "02h": {
+      "name": "LANID Irrigation Mapping",
+      "vars": "IRRIG",
+      "folder": "02h_lanid",
+      "method": "requests / rioxarray",
+      "endpoint": "REPLACE_WITH_ZENODO_OR_HYDROSHARE_URL",
+      "usage": "High-resolution irrigation stratification.",
+      "drive_subfolder": "02_independent/02h_lanid"
+    },
+    "02i": {
+      "name": "USDA NASS Statistics",
+      "vars": "NASS",
+      "folder": "02i_nass_stats",
+      "method": "nass / requests",
+      "endpoint": "https://quickstats.nass.usda.gov/api/api_GET/",
+      "usage": "Agricultural outcome validation.",
+      "drive_subfolder": "02_independent/02i_nass_stats"
+    },
+    "02j": {
+      "name": "ECOSTRESS Level-2 ET and LST",
+      "vars": "MULTI",
+      "folder": "02j_ecostress",
+      "method": "earthaccess",
+      "endpoint": "ECOSTRESS_L2_LSTE",
+      "usage": "Recent high-resolution ET and LST dry-down detail.",
+      "drive_subfolder": "02_independent/02j_ecostress"
+    }
+  },
+  "output_folders": [
+    "01a_grace_mascons",
+    "01b_smap_l4_rzsm",
+    "01d_tropomi_sif",
+    "01e_era5_land",
+    "01f_gridmet",
+    "01g_modis_ndvi_evi",
+    "01h_modis_landcover",
+    "01i_srtm_dem",
+    "01j_usda_cdl",
+    "01k_gfsad",
+    "01l_aridity_index",
+    "01m_worldcover",
+    "01n_landsat",
+    "01o_sentinel2",
+    "01p_pml_v2",
+    "01q_ssebop",
+    "01r_soilgrids",
+    "01s_nasadem",
+    "01c_smap_l3_vod",
+    "02a_ma_wtd_raster",
+    "02b_usgs_wells",
+    "02c_state_wells",
+    "02d_ameriflux",
+    "02e_sapfluxnet",
+    "02f_gleam4",
+    "02g_gosif",
+    "02h_lanid",
+    "02i_nass_stats",
+    "02j_ecostress"
+  ]
+}
