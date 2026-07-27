@@ -1,13 +1,13 @@
-# Ogallala Phase 0 Colab pipeline
+# Ogallala Phase 0 local Earth Engine pipeline
 
-This folder contains self-contained Colab notebooks for the Phase 0 Groundwater Buffering of Ecosystem Function During Drought data intake. The notebooks write only to `Google Drive/MyDrive/Ogallala_Phase0`; `/content/` is not used as an output location.
+These notebooks run in a local Jupyter environment. They authenticate Earth Engine locally and submit non-blocking `ee.batch.Export.image.toDrive` tasks. GeoTIFF outputs are written by Earth Engine to Google Drive; local files contain configuration, logs, manifests, and the task registry. No notebook mounts Google Drive or uses `/content/drive`.
 
 ## Run order
 
-1. Upload this folder, including the `high_plains_quifer` shapefile components, to a Drive working folder if Colab cannot see the local workspace.
-2. Run `00_setup_aoi_and_config.ipynb`. It streams the USGS boundary archive directly into Drive when a Drive copy is not present.
-3. Run any `01*.ipynb` and `02*.ipynb`. `DRY_RUN: true` processes exactly one XEE chunk and does not queue batch tasks. Set it to `false` in Drive `00_setup/config.yaml` for non-blocking yearly Earth Engine submissions.
-4. Run `98_monitor_gdrive_exports.ipynb` to poll server-side tasks.
-5. Run `99_run_all_and_validate.ipynb` to validate CF metadata and write the output index.
+1. Install [requirements.txt](requirements.txt) in the local Python environment.
+2. Run `00_setup_aoi_and_config.ipynb` from this directory. It uses the supplied `high_plains_quifer` shapefile when available and writes local setup files under `OGALLALA_PHASE0_ROOT` (default `./Ogallala_Phase0`).
+3. Run any `01*.ipynb` and `02*.ipynb`. The GEE notebooks submit yearly/static GeoTIFF tasks to the configured Google Drive folder and do not wait for completion.
+4. Run `98_monitor_gdrive_exports.ipynb` to poll Earth Engine tasks and update the local registry.
+5. Run `99_run_all_and_validate.ipynb` to aggregate task status and write the local README index.
 
-The supplied `config.yaml` is a template; notebook 00 writes the complete Drive config with asset IDs, bands, master scales, dates, and output folders. Registration-only independent datasets retain explicit endpoint placeholders and must be configured before use.
+Set `GEE_PROJECT` and optionally `OGALLALA_PHASE0_ROOT` before starting. Set `EE_DRIVE_FOLDER` for the standalone `try.ipynb` example. The notebooks do not run `write_exported_geotiff_as_cf`; exported GeoTIFFs remain in Google Drive. Registration-only independent datasets retain explicit endpoint placeholders and must be configured before use.

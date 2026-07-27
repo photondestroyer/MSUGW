@@ -1,5 +1,5 @@
 {
-  "DRY_RUN": true,
+  "DRY_RUN": false,
   "GEE_PROJECT": "ee-ishansinhagzb",
   "MASTER_CRS": "EPSG:5070",
   "MASTER_SCALE": {

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 
 ROOT = Path(__file__).parent
@@ -327,8 +328,8 @@ def write_manifest(root: Path, notebook_id: str, files: Iterable[Path],
 '''
 
 DATASETS = {
-    "01a": {"name": "GRACE / GRACE-FO Mascons", "asset_id": "NASA/GRACE/MASS_GRIDS/MASCON_CRI", "vars": "TWSA", "bands": ["lwe_thickness"], "scale": 1000, "kind": "collection", "start": "2002-04-01", "end": "2024-09-30", "folder": "01a_grace_mascons", "usage": "Basin-scale storage constraint and slow driver; use for closure and screening."},
-    "01b": {"name": "SMAP L4 Root Zone Soil Moisture and L3 VOD", "asset_id": ["NASA/SMAP/SPL4SMGP/007", "NASA/SMAP/SPL3SMP_E/005"], "vars": "MULTI", "bands": ["sm_rootzone", "vegetation_water_content"], "scale": 1000, "kind": "collection_group", "start": "2015-04-01", "end": "2024-09-30", "folder": "01b_smap_l4_rzsm", "usage": "Climate control and vegetation water signal for dry-down decoupling analysis."},
+    "01a": {"name": "GRACE / GRACE-FO Mascons", "asset_id": "NASA/GRACE/MASS_GRIDS_V04/MASCON", "vars": "TWSA", "bands": ["lwe_thickness"], "scale": 1000, "kind": "collection", "start": "2002-04-01", "end": "2024-09-30", "folder": "01a_grace_mascons", "usage": "Basin-scale storage constraint and slow driver; use for closure and screening."},
+    "01b": {"name": "SMAP L4 Root Zone Soil Moisture and L3 VOD", "asset_id": ["NASA/SMAP/SPL4SMGP/008", "NASA/SMAP/SPL3SMP_E/005"], "vars": "MULTI", "bands": ["sm_rootzone", "vegetation_water_content"], "scale": 1000, "kind": "collection_group", "start": "2015-04-01", "end": "2024-09-30", "folder": "01b_smap_l4_rzsm", "usage": "Climate control and vegetation water signal for dry-down decoupling analysis."},
     "01d": {"name": "TROPOMI SIF", "asset_id": "projects/sat-io/open-datasets/TROPOSIF", "vars": "SIF", "bands": ["SIF"], "scale": 1000, "kind": "collection", "start": "2018-05-01", "end": "2024-09-30", "folder": "01d_tropomi_sif", "usage": "Independent carbon signal for recent-period decoupling analysis."},
     "01e": {"name": "ERA5-Land", "asset_id": "ECMWF/ERA5_LAND/HOURLY", "vars": "MULTI", "bands": ["total_precipitation", "temperature_2m", "dewpoint_temperature_2m", "surface_net_solar_radiation"], "scale": 1000, "kind": "collection", "start": "2002-01-01", "end": "2024-09-30", "folder": "01e_era5_land", "usage": "Meteorological controls for expected-function matching."},
     "01f": {"name": "gridMET", "asset_id": "IDAHO_EPSCOR/GridMET", "vars": "MULTI", "bands": ["pr", "vpd", "etr", "tmmx", "tmmn", "vs"], "scale": 1000, "kind": "collection", "start": "1979-01-01", "end": "2024-09-30", "folder": "01f_gridmet", "usage": "Primary climate grid for inference and matching."},
@@ -364,8 +365,29 @@ LEAVES = [d["folder"] for d in DATASETS.values()] + ['01c_smap_l3_vod'] + [d["fo
 
 
 def cell(cell_type: str, source: str, language: str) -> dict:
-    return {"cell_type": cell_type, "metadata": {"language": language},
-            "source": source.splitlines(True)}
+    cell_id = hashlib.sha1(source.encode('utf-8')).hexdigest()[:12]
+    return {"cell_type": cell_type, "metadata": {"id": cell_id, "language": language},
+            "id": cell_id, "source": source.splitlines(True)}
+
+
+def localize_document(document: dict) -> dict:
+    """Remove stale Colab paths from generated notebook source."""
+    replacements = {
+        "from google.colab import drive\n": "",
+        "drive.mount('/content/drive')\n": "",
+        "Path('/content/drive/MyDrive/Ogallala_Phase0/notebooks')": "Path.cwd()",
+        "CONFIG.get('DRY_RUN', True)": "CONFIG.get('DRY_RUN', False)",
+        "'DRY_RUN': True": "'DRY_RUN': False",
+    }
+    for notebook_cell in document.get('cells', []):
+        source = notebook_cell.get('source')
+        if not isinstance(source, list):
+            continue
+        text = ''.join(source)
+        for old, new in replacements.items():
+            text = text.replace(old, new)
+        notebook_cell['source'] = text.splitlines(True)
+    return document
 
 
 def notebook(cells: list[dict]) -> dict:
@@ -373,10 +395,10 @@ def notebook(cells: list[dict]) -> dict:
 
 
 def setup_code(notebook_id: str, needs_earthaccess: bool = False) -> str:
-    auth = '''\n# ECOSTRESS uses a .netrc file in Colab; credentials come only from env vars or prompts.\nif os.getenv("EARTHDATA_USERNAME") and os.getenv("EARTHDATA_PASSWORD"):\n    netrc_path = Path.home() / ".netrc"\n    netrc_path.write_text(f"machine urs.earthdata.nasa.gov login {os.environ['EARTHDATA_USERNAME']} password {os.environ['EARTHDATA_PASSWORD']}\\n", encoding="utf-8")\n    netrc_path.chmod(0o600)\n    import earthaccess\n    if os.getenv("EARTHACCESS_INTERACTIVE") == "1":\n        earthaccess.login(strategy="interactive")\n    else:\n        earthaccess.login(strategy="netrc")\n'''
+    auth = '''\n# ECOSTRESS uses a local .netrc file; credentials come only from environment variables.\nif os.getenv("EARTHDATA_USERNAME") and os.getenv("EARTHDATA_PASSWORD"):\n    netrc_path = Path.home() / ".netrc"\n    netrc_path.write_text(f"machine urs.earthdata.nasa.gov login {os.environ['EARTHDATA_USERNAME']} password {os.environ['EARTHDATA_PASSWORD']}\\n", encoding="utf-8")\n    netrc_path.chmod(0o600)\n    import earthaccess\n    earthaccess.login(strategy="netrc")\n'''
     if not needs_earthaccess:
         auth = ''
-    return f'''# Colab bootstrap. Installs are quiet so the notebook stays readable.\n%pip -q install earthengine-api xee xarray netCDF4 h5netcdf geopandas rioxarray regionmask "dask[diagnostics]" requests tqdm python-dotenv pyyaml matplotlib pandas pyproj shapely\nfrom pathlib import Path\nimport os, sys, json, time, logging, traceback\nfrom datetime import datetime\nfrom google.colab import drive\ndrive.mount('/content/drive')\n\nPROJECT_ID = os.getenv("GEE_PROJECT", "ee-ishansinhagzb")\nimport ee\nee.Authenticate()\nee.Initialize(project=PROJECT_ID)\n{auth}\nDRIVE_ROOT = Path('/content/drive/MyDrive/Ogallala_Phase0')\nSETUP_DIR = DRIVE_ROOT / '00_setup'\nSETUP_DIR.mkdir(parents=True, exist_ok=True)\n# The embedded module makes each notebook independently uploadable to Colab.\nUTILS_SOURCE = {UTILS!r}\n(SETUP_DIR / 'utils.py').write_text(UTILS_SOURCE, encoding='utf-8')\nsys.path.insert(0, str(SETUP_DIR))\nfrom utils import *\nNOTEBOOK_ID = '{notebook_id}'\n'''
+    return f'''# Local bootstrap. Installs are quiet so the notebook stays readable.\n%pip -q install earthengine-api xee xarray netCDF4 h5netcdf geopandas rioxarray regionmask "dask[diagnostics]" requests tqdm python-dotenv pyyaml matplotlib pandas pyproj shapely compliance-checker\nfrom pathlib import Path\nimport os, sys, json, time, logging, traceback\nfrom datetime import datetime\n\nPROJECT_ID = os.getenv("GEE_PROJECT", "ee-ishansinhagzb")\nimport ee\nee.Authenticate()\nee.Initialize(project=PROJECT_ID)\n{auth}\n# Local files hold configuration, logs, and task metadata. GeoTIFF outputs go to Google Drive via EE.\nDRIVE_ROOT = Path(os.getenv("OGALLALA_PHASE0_ROOT", "./Ogallala_Phase0"))\nSETUP_DIR = DRIVE_ROOT / '00_setup'\nSETUP_DIR.mkdir(parents=True, exist_ok=True)\nUTILS_SOURCE = {UTILS!r}\n(SETUP_DIR / 'utils.py').write_text(UTILS_SOURCE, encoding='utf-8')\nsys.path.insert(0, str(SETUP_DIR))\nfrom utils import *\nNOTEBOOK_ID = '{notebook_id}'\n'''
 
 
 def config_code(dataset: dict, notebook_id: str) -> str:
@@ -387,14 +409,14 @@ def config_code(dataset: dict, notebook_id: str) -> str:
 
 
 def gee_notebook(notebook_id: str, dataset: dict, group: bool = False) -> dict:
-    title = f"# {notebook_id}: {dataset['name']}\n\n**Why:** {dataset['usage']}\n\n- Asset ID: `{dataset['asset_id']}`\n- Outputs: `raw/`, `cf/`, and `qc/` under `{dataset['folder']}`\n- Author: `<name / institution>`\n- This notebook preserves native bands and QA values; it does not select away quality metadata."
+    title = f"# {notebook_id}: {dataset['name']}\n\n**Why:** {dataset['usage']}\n\n- Asset ID: `{dataset['asset_id']}`\n- Outputs: server-side GeoTIFF tasks in Google Drive folder `raw/`; local logs and task registry under `DRIVE_ROOT`\n- Author: `<name / institution>`\n- This notebook runs locally, preserves native bands and QA values, and does not select away quality metadata."
     dataset_code = f'''DATASET_ID = '{notebook_id}'\nDATASET = {json.dumps(dataset, indent=2)}\nDATASET['drive_subfolder'] = '01_gee_rasters/{dataset['folder']}'\nDATASET['crs'] = 'EPSG:5070'\nDATASET['band_metadata'] = {{band: {{'long_name': band, 'units': '1', 'standard_name': 'unknown'}} for band in DATASET['bands']}}\n'''
     pipeline = '''def build_gee_source() -> tuple[object, bool]:\n    """Build clipped, reprojected sources while retaining every native band."""\n    asset_ids = DATASET['asset_id'] if isinstance(DATASET['asset_id'], list) else [DATASET['asset_id']]\n    if DATASET['kind'] == 'image':\n        return ee.Image(asset_ids[0]).clip(AOI), False\n    sources = []\n    for asset_id in asset_ids:\n        collection = ee.ImageCollection(asset_id).filterBounds(AOI).filterDate(DATASET['start'], DATASET['end'])\n        # Do not call select(): QA, uncertainty, and native metadata must survive.\n        sources.append(collection.map(lambda image: image.clip(AOI).reproject(crs=MASTER_CRS, scale=MASTER_SCALE)))\n    return (sources if DATASET['kind'] == 'collection_group' else sources[0]), True\n\nSOURCE, IS_COLLECTION = build_gee_source()\n'''
-    xee = '''@logged_step(NOTEBOOK_ID, DATASET['name'], DRIVE_ROOT, logger)\ndef dry_run_xee() -> list[Path]:\n    """Pull exactly one chunk per source through XEE and write CF files."""\n    if not DRY_RUN:\n        return []\n    import xarray as xr\n    from dask.diagnostics import ProgressBar\n    sources = SOURCE if isinstance(SOURCE, list) else [SOURCE]\n    outputs = []\n    for index, source in enumerate(sources):\n        if IS_COLLECTION:\n            source = source.filterDate(DATASET['start'], DATASET['start'] + 'T23:59:59')\n            ds = xr.open_dataset(source, engine='ee', crs=MASTER_CRS, scale=MASTER_SCALE,\n                                 geometry=AOI, chunks={'time': 24, 'lat': 256, 'lon': 256}, ee_mask=False)\n        else:\n            ds = xr.open_dataset(source, engine='ee', crs=MASTER_CRS, scale=MASTER_SCALE,\n                                 geometry=AOI, chunks={'lat': 256, 'lon': 256}, ee_mask=False)\n        with ProgressBar():\n            materialized = ds.compute()\n        suffix = f'_part{index + 1}' if len(sources) > 1 else ''\n        start = DATASET['start']\n        name = f"DRYRUN_OG_{DATASET_ID}_{DATASET['vars']}{suffix}_{start}_{start}_{MASTER_SCALE}m.nc"\n        output = LEAF / 'cf' / 'dry_run' / name\n        write_cf_netcdf(materialized, output, {'title': DATASET['name'], 'notebook_id': NOTEBOOK_ID,\n            'source': DATASET['asset_id'], 'gee_asset_id': str(DATASET['asset_id'])}, DATASET['band_metadata'])\n        qc_netcdf(output, LEAF / 'qc' / 'dry_run')\n        outputs.append(output)\n    return outputs\n\nDRY_RUN_OUTPUTS = dry_run_xee()\n'''
+    xee = '''# Client-side XEE pulls are disabled in local batch mode.\n# Set DRY_RUN only to inspect configuration; it will not create a local NetCDF.\nDRY_RUN_OUTPUTS: list[Path] = []\nif DRY_RUN:\n    logger.info('DRY_RUN is enabled; no Earth Engine export was submitted.')\n'''
     export = '''def submit_normal_exports() -> list[str]:\n    """Queue temporal or static exports without waiting for server completion."""\n    if DRY_RUN:\n        return []\n    manager = BatchManager(DRIVE_ROOT, NOTEBOOK_ID, DATASET['name'], logger, max_concurrent=20)\n    task_ids = []\n    folder = f"Ogallala_Phase0/{DATASET['drive_subfolder']}/raw"\n    sources = SOURCE if isinstance(SOURCE, list) else [SOURCE]\n    for source_index, source in enumerate(sources):\n        suffix = f'_part{source_index + 1}' if len(sources) > 1 else ''\n        if IS_COLLECTION:\n            start_year = int(DATASET['start'][:4])\n            end_year = int(DATASET['end'][:4])\n            for year in range(start_year, end_year + 1):\n                start = f'{year}-01-01'\n                end = f'{year + 1}-01-01'\n                chunk = source.filterDate(start, end).median().clip(AOI)\n                prefix = f"OG_{DATASET_ID}_{DATASET['vars']}{suffix}_{start}_{year}-12-31_{MASTER_SCALE}m"\n                task_ids.append(manager.submit_image(chunk, f'{DATASET_ID}_{source_index}_{year}', folder, prefix, AOI, MASTER_SCALE, MASTER_CRS))\n        else:\n            start, end = DATASET['start'], DATASET['end']\n            prefix = f"OG_{DATASET_ID}_{DATASET['vars']}{suffix}_{start}_{end}_{MASTER_SCALE}m"\n            task_ids.append(manager.submit_image(source, f'{DATASET_ID}_{source_index}_static', folder, prefix, AOI, MASTER_SCALE, MASTER_CRS))\n    return task_ids\n\nQUEUED_TASKS = submit_normal_exports()\n'''
-    writer = '''def write_exported_geotiff_as_cf(geotiff: Path) -> Path:\n    """Convert one completed Drive GeoTIFF into the CF output tree."""\n    import rioxarray\n    raster = rioxarray.open_rasterio(geotiff, masked=True).squeeze(drop=True)\n    out = LEAF / 'cf' / f"{geotiff.stem}.nc"\n    return write_cf_netcdf(raster.to_dataset(name=DATASET['vars']), out,\n        {'title': DATASET['name'], 'notebook_id': NOTEBOOK_ID, 'source': DATASET['asset_id'],\n         'gee_asset_id': str(DATASET['asset_id'])}, DATASET['band_metadata'])\n\n# This conversion is intentionally opt-in: normal submissions are non-blocking and\n# Drive exports may not exist until 98_monitor_gdrive_exports reports COMPLETED.\n'''
+    writer = '''# GeoTIFFs remain in Google Drive as server-side export results.\n# No local GeoTIFF-to-CF conversion is performed by this notebook.\n'''
     qc = '''OUTPUTS = list(DRY_RUN_OUTPUTS)\nfor output in OUTPUTS:\n    write_manifest(DRIVE_ROOT, NOTEBOOK_ID, [output], DATASET['name'])\n'''
-    final = '''registry = pd.read_csv(registry_path(DRIVE_ROOT))\nstatus = 'DRY_RUN_COMPLETED' if DRY_RUN and all(path.exists() for path in OUTPUTS) else ('QUEUED' if QUEUED_TASKS else 'FAILED_OR_NOT_RUN')\nprint(pd.DataFrame([{'dataset': DATASET['name'], 'file_or_tasks': len(OUTPUTS) or len(QUEUED_TASKS), 'status': status}]).to_string(index=False))\nif DRY_RUN and not all(path.exists() for path in OUTPUTS):\n    raise RuntimeError(f'Missing dry-run outputs: {[str(path) for path in OUTPUTS if not path.exists()]}')\n'''
+    final = '''registry = pd.read_csv(registry_path(DRIVE_ROOT))\nstatus = 'DRY_RUN_NO_EXPORT' if DRY_RUN else ('QUEUED' if QUEUED_TASKS else 'FAILED_OR_NOT_RUN')\nprint(pd.DataFrame([{'dataset': DATASET['name'], 'earth_engine_tasks': len(QUEUED_TASKS), 'status': status}]).to_string(index=False))\n'''
     cells = [cell('markdown', title, 'markdown'), cell('code', setup_code(notebook_id), 'python'), cell('code', config_code(dataset, notebook_id), 'python'), cell('code', "logger, LOG_PATH = configure_logger(NOTEBOOK_ID, DRIVE_ROOT)\nREGISTRY = registry_path(DRIVE_ROOT)\n@logged_step(NOTEBOOK_ID, DATASET['name'], DRIVE_ROOT, logger)\ndef logger_health_check() -> str:\n    logger.info('Logger ready: %s', LOG_PATH)\n    return str(LOG_PATH)\nlogger_health_check()\n", 'python'), cell('code', dataset_code, 'python'), cell('code', pipeline, 'python'), cell('code', xee, 'python'), cell('code', export, 'python'), cell('code', "%pip -q install compliance-checker\nMAX_CONCURRENT = 20\nMAX_DAILY_TASKS = 2500\n# BatchManager enforces the local cap, retry backoff, registry writes, and non-blocking submission.\n", 'python'), cell('code', writer, 'python'), cell('code', qc, 'python'), cell('code', final, 'python')]
     return notebook(cells)
 
@@ -425,7 +447,7 @@ def setup_notebook() -> dict:
     """Build the setup notebook without interpolating runtime dictionaries."""
     title = "# 00: Setup AOI and configuration\n\n**Why:** This notebook creates the single Drive handoff used by every Phase 0 notebook. It streams the USGS High Plains boundary directly to Drive when needed, serializes the AOI, and creates the complete output tree.\n\n- Source: USGS High Plains Aquifer boundary\n- Outputs: `00_setup/ogallala_boundary.geojson`, `ogallala_bbox.json`, `aoi_ee_geometry.json`, `config.yaml`, and `utils.py`\n- Author: `<name / institution>`"
     bootstrap = setup_code('00_setup')
-    config_object = {'DRY_RUN': True, 'GEE_PROJECT': 'ee-ishansinhagzb',
+    config_object = {'DRY_RUN': False, 'GEE_PROJECT': 'ee-ishansinhagzb',
                      'MASTER_CRS': 'EPSG:5070',
                      'MASTER_SCALE': {key: value['scale'] for key, value in DATASETS.items()},
                      'AOI_BUFFER_METERS': 1000, 'START_DATE': '2000-01-01',
@@ -502,9 +524,20 @@ def monitor() -> dict:
     return notebook(cells)
 
 
+def local_try_notebook() -> dict:
+    """Build the local replacement for the original interactive prototype."""
+    cells = [
+        cell('markdown', "# Local Earth Engine GeoTIFF export\n\nThis prototype authenticates Earth Engine locally, clips the GRACE mascon mean to the supplied High Plains Aquifer shapefile, and submits a non-blocking GeoTIFF export to Google Drive. It does not mount Drive, pull XEE data, or convert GeoTIFFs to NetCDF.", 'markdown'),
+        cell('code', """%pip -q install earthengine-api geopandas shapely pyproj\nfrom pathlib import Path\nimport json\nimport os\nimport time\nimport ee\nimport geopandas as gpd\n\nPROJECT_ID = os.getenv('GEE_PROJECT', 'ee-ishansinhagzb')\nDRIVE_FOLDER = os.getenv('EE_DRIVE_FOLDER', 'Ogallala_Phase0/01_gee_rasters/01a_grace_mascons/raw')\nLOCAL_ROOT = Path(os.getenv('OGALLALA_PHASE0_ROOT', './Ogallala_Phase0'))\nLOCAL_ROOT.mkdir(parents=True, exist_ok=True)\nee.Authenticate()\nee.Initialize(project=PROJECT_ID)\n""", 'python'),
+        cell('code', """boundary_path = Path('high_plains_quifer/hp_bound2010.shp')\ngdf = gpd.read_file(boundary_path).to_crs('EPSG:4326')\ngeometry = ee.Geometry(json.loads(gdf.to_json())['features'][0]['geometry'])\n\ncollection = (ee.ImageCollection('NASA/GRACE/MASS_GRIDS_V04/MASCON')\n              .filterBounds(geometry)\n              .filterDate('2002-04-01', '2024-09-30'))\nimage = collection.mean().clip(geometry)\n""", 'python'),
+        cell('code', """description = 'OG_01a_GRACE_TWSA_2002-04-01_2024-09-30_1000m'\ntask = ee.batch.Export.image.toDrive(\n    image=image,\n    description=description,\n    folder=DRIVE_FOLDER,\n    fileNamePrefix=description,\n    region=geometry,\n    scale=1000,\n    crs='EPSG:5070',\n    maxPixels=1e13,\n    fileFormat='GeoTIFF',\n)\ntask.start()\nprint({'task_id': task.id, 'status': task.status(), 'drive_folder': DRIVE_FOLDER})\n""", 'python'),
+    ]
+    return notebook(cells)
+
+
 def main() -> None:
     (ROOT / 'utils.py').write_text(UTILS, encoding='utf-8')
-    config_template = {'DRY_RUN': True, 'GEE_PROJECT': 'ee-ishansinhagzb',
+    config_template = {'DRY_RUN': False, 'GEE_PROJECT': 'ee-ishansinhagzb',
                        'MASTER_CRS': 'EPSG:5070',
                        'MASTER_SCALE': {key: value['scale'] for key, value in DATASETS.items()},
                        'AOI_BUFFER_METERS': 1000, 'START_DATE': '2000-01-01',
@@ -514,7 +547,7 @@ def main() -> None:
                        'output_folders': LEAVES}
     (ROOT / 'config.yaml').write_text(json.dumps(config_template, indent=2), encoding='utf-8')
     (ROOT / 'requirements.txt').write_text('''earthengine-api\nxee\nxarray\nnetCDF4\nh5netcdf\ngeopandas\nrioxarray\nregionmask\ndask[diagnostics]\nrequests\ntqdm\npython-dotenv\npyyaml\nmatplotlib\npandas\nshapely\npyproj\ncompliance-checker\nearthaccess\ndataretrieval\nameriflux-api\n''', encoding='utf-8')
-    (ROOT / 'README.md').write_text('''# Ogallala Phase 0 Colab pipeline\n\nThis folder contains self-contained Colab notebooks for the Phase 0 Groundwater Buffering of Ecosystem Function During Drought data intake. The notebooks write only to `Google Drive/MyDrive/Ogallala_Phase0`; `/content/` is not used as an output location.\n\n## Run order\n\n1. Upload this folder, including the `high_plains_quifer` shapefile components, to a Drive working folder if Colab cannot see the local workspace.\n2. Run `00_setup_aoi_and_config.ipynb`. It streams the USGS boundary archive directly into Drive when a Drive copy is not present.\n3. Run any `01*.ipynb` and `02*.ipynb`. `DRY_RUN: true` processes exactly one XEE chunk and does not queue batch tasks. Set it to `false` in Drive `00_setup/config.yaml` for non-blocking yearly Earth Engine submissions.\n4. Run `98_monitor_gdrive_exports.ipynb` to poll server-side tasks.\n5. Run `99_run_all_and_validate.ipynb` to validate CF metadata and write the output index.\n\nThe supplied `config.yaml` is a template; notebook 00 writes the complete Drive config with asset IDs, bands, master scales, dates, and output folders. Registration-only independent datasets retain explicit endpoint placeholders and must be configured before use.\n''', encoding='utf-8')
+    (ROOT / 'README.md').write_text('''# Ogallala Phase 0 local Earth Engine pipeline\n\nThese notebooks run in a local Jupyter environment. They authenticate Earth Engine locally and submit non-blocking `ee.batch.Export.image.toDrive` tasks. GeoTIFF outputs are written by Earth Engine to Google Drive; local files contain configuration, logs, manifests, and the task registry. No notebook mounts Google Drive or uses `/content/drive`.\n\n## Run order\n\n1. Install [requirements.txt](requirements.txt) in the local Python environment.\n2. Run `00_setup_aoi_and_config.ipynb` from this directory. It uses the supplied `high_plains_quifer` shapefile when available and writes local setup files under `OGALLALA_PHASE0_ROOT` (default `./Ogallala_Phase0`).\n3. Run any `01*.ipynb` and `02*.ipynb`. The GEE notebooks submit yearly/static GeoTIFF tasks to the configured Google Drive folder and do not wait for completion.\n4. Run `98_monitor_gdrive_exports.ipynb` to poll Earth Engine tasks and update the local registry.\n5. Run `99_run_all_and_validate.ipynb` to aggregate task status and write the local README index.\n\nSet `GEE_PROJECT` and optionally `OGALLALA_PHASE0_ROOT` before starting. Set `EE_DRIVE_FOLDER` for the standalone `try.ipynb` example. The notebooks do not run `write_exported_geotiff_as_cf`; exported GeoTIFFs remain in Google Drive. Registration-only independent datasets retain explicit endpoint placeholders and must be configured before use.\n''', encoding='utf-8')
     gee_filenames = {
         '01a': '01a_gee_grace.ipynb', '01b': '01b_gee_smap.ipynb',
         '01d': '01d_gee_tropomi_sif.ipynb', '01e': '01e_gee_era5_land.ipynb',
@@ -530,12 +563,13 @@ def main() -> None:
         old_notebook.unlink()
     for notebook_id, dataset in DATASETS.items():
         filename = gee_filenames[notebook_id]
-        (ROOT / filename).write_text(json.dumps(gee_notebook(notebook_id, dataset), indent=2), encoding='utf-8')
+        (ROOT / filename).write_text(json.dumps(localize_document(gee_notebook(notebook_id, dataset)), indent=2), encoding='utf-8')
     for notebook_id, dataset in INDEPENDENT.items():
-        (ROOT / f'{notebook_id}_indep_{dataset["folder"].replace(notebook_id + "_", "")}.ipynb').write_text(json.dumps(independent_notebook(notebook_id, dataset), indent=2), encoding='utf-8')
-    (ROOT / '00_setup_aoi_and_config.ipynb').write_text(json.dumps(setup_notebook(), indent=2), encoding='utf-8')
-    (ROOT / '98_monitor_gdrive_exports.ipynb').write_text(json.dumps(monitor(), indent=2), encoding='utf-8')
-    (ROOT / '99_run_all_and_validate.ipynb').write_text(json.dumps(orchestrator(), indent=2), encoding='utf-8')
+        (ROOT / f'{notebook_id}_indep_{dataset["folder"].replace(notebook_id + "_", "")}.ipynb').write_text(json.dumps(localize_document(independent_notebook(notebook_id, dataset)), indent=2), encoding='utf-8')
+    (ROOT / '00_setup_aoi_and_config.ipynb').write_text(json.dumps(localize_document(setup_notebook()), indent=2), encoding='utf-8')
+    (ROOT / '98_monitor_gdrive_exports.ipynb').write_text(json.dumps(localize_document(monitor()), indent=2), encoding='utf-8')
+    (ROOT / '99_run_all_and_validate.ipynb').write_text(json.dumps(localize_document(orchestrator()), indent=2), encoding='utf-8')
+    (ROOT / 'try.ipynb').write_text(json.dumps(localize_document(local_try_notebook()), indent=2), encoding='utf-8')
     print('Generated', len(list(ROOT.glob('*.ipynb'))), 'notebooks')
 
 

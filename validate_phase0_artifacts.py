@@ -48,9 +48,12 @@ for name in expected:
                 errors.append(f'{name}: cell {index}: {exc}')
     if name.startswith('01'):
         text = path.read_text(encoding='utf-8')
-        for required in ['xr.open_dataset', 'ee_mask=False', 'BatchManager', 'write_cf_netcdf', 'MASTER_CRS', 'MASTER_SCALE', 'MAX_CONCURRENT = 20']:
+        for required in ['ee.batch.Export.image.toDrive', 'BatchManager', 'MASTER_CRS', 'MASTER_SCALE', 'MAX_CONCURRENT = 20']:
             if required not in text:
                 errors.append(f'{name}: missing {required}')
+        for forbidden in ['google.colab', 'drive.mount', '/content/drive', 'write_exported_geotiff_as_cf']:
+            if forbidden in text:
+                errors.append(f'{name}: forbidden local-mode token {forbidden}')
 
 config = json.loads((ROOT / 'config.yaml').read_text(encoding='utf-8'))
 for dataset in config.get('datasets', {}).values():

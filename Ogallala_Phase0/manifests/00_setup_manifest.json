@@ -1,0 +1,36 @@
+{
+  "notebook_id": "00_setup",
+  "status": "COMPLETED",
+  "files": [
+    {
+      "file": "Ogallala_Phase0\\00_setup\\ogallala_boundary.geojson",
+      "size_bytes": 7194801,
+      "cf_version": "CF-1.8",
+      "dataset": "Ogallala Aquifer Boundary"
+    },
+    {
+      "file": "Ogallala_Phase0\\00_setup\\ogallala_bbox.json",
+      "size_bytes": 129,
+      "cf_version": "CF-1.8",
+      "dataset": "Ogallala Aquifer Boundary"
+    },
+    {
+      "file": "Ogallala_Phase0\\00_setup\\aoi_ee_geometry.json",
+      "size_bytes": 5800599,
+      "cf_version": "CF-1.8",
+      "dataset": "Ogallala Aquifer Boundary"
+    },
+    {
+      "file": "Ogallala_Phase0\\00_setup\\config.yaml",
+      "size_bytes": 10639,
+      "cf_version": "CF-1.8",
+      "dataset": "Ogallala Aquifer Boundary"
+    },
+    {
+      "file": "Ogallala_Phase0\\00_setup\\utils.py",
+      "size_bytes": 15262,
+      "cf_version": "CF-1.8",
+      "dataset": "Ogallala Aquifer Boundary"
+    }
+  ]
+}
