@@ -1,0 +1,57 @@
+<!DOCTYPE qgis PUBLIC 'http://mrcc.com/qgis.dtd' 'SYSTEM'>
+<qgis version="3.40.8-Bratislava">
+  <identifier>hp_bound2010</identifier>
+  <parentidentifier></parentidentifier>
+  <language>EN</language>
+  <type>dataset</type>
+  <title>hp_bound2010</title>
+  <abstract>This digital data set represents the extent of the High Plains aquifer in the central United States. The extent of the High Plains aquifer covers 174,000 square miles in eight states; Colorado, Kansas, Nebraska, New Mexico, Oklahoma, South Dakota, Texas, and Wyoming. This data set represents a compilation of information from digital and paper sources and personal communication. This boundary is an update to the boundary published in U.S. Geological Survey Professional Paper 1400-B and Open-File Report 99-267.
+
+The purpose of this data set is to refine and update the extent of the High Plains aquifer based on currently available information.
+
+This data set represents a compilation of arcs from a variety of sources and scales that represent the 174,000 square-mile extent of the High Plains aquifer within eight states: Colorado, Kansas, Nebraska, New Mexico, Oklahoma, South Dakota, Texas, and Wyoming. Where updated information was not available, the original boundary extent defined by OFR 99-267 was retained. The citations for the sources in each state are listed below. The boundary also contains internal polygons, or "islands", that represent the areas within the aquifer boundary where the aquifer is not present due to erosion or non-deposition. Colorado: The arcs used to define the boundary were modified from Green, G.N., 1992, The digital geologic map of Colorado in ARC/INFO format: U.S. Geological Survey Open-File Report 92-507-D-O. Available at URL http://pubs.er.usgs.gov/publication/ofr92507DO Scott, G.R., 1978, Map showing geology, structure, and oil and gas fields in the Sterling 1 x 2 Quadrangle, Colorado, Nebraska, and Kansas: U.S. Geological Survey Miscellaneous Investigations Map IMAP-1092. Available at URL http://pubs.er.usgs.gov/publication/i1092 Weist, W. G., 1965, Reconnaissance of the ground-water resources in parts of Larimer, Logan, Morgan, Sedgwick, and Weld Counties, Colorado: U.S. Geological Survey Water Supply Paper 1809-L. Available at URL http://pubs.er.usgs.gov/publication/wsp1809L Kansas: U.S. Geological Survey, 1995, High Plains aquifer. Available at URL http://www.kansasgis.org/catalog/catalog.cfm Nebraska: Cederstrand, J.R., Becker, M.F., 1999, Digital map of aquifer boundary for the High Plains Aquifer in parts of Colorado, Kansas, Nebraska, New Mexico, Oklahoma, South Dakota, Texas, and Wyoming: U.S. Geological Survey Open-File Report 99-267. Available at URL http://pubs.er.usgs.gov/publication/ofr99267 New Mexico: Eifler, G.K., Jr., Reeves, C.C., Jr. and Barnes, V.E., 1974, Geologic atlas of Texas, Brownfield Sheet: University of Texas-Austin, Bureau of Economic Geology, 1 sheet, scale 1:250,000. Eifler, G.K., Jr., Reeves, C.C., Jr. and Barnes, V.E., 1976, Geologic atlas of Texas, Hobbs Sheet: University of Texas-Austin, Bureau of Economic Geology, 1 sheet, scale 1:250,000. Eifler, G.K., Jr., Reeves, C.C., Jr. and Barnes, V.E., 1977, Geologic atlas of Texas, Clovis Sheet: University of Texas-Austin, Bureau of Economic Geology, 1 sheet, scale 1:250,000. To purchase the above map sheets: Bureau of Economic Geology publications available at URL: http://www.beg.utexas.edu/mainweb/publications/pubs-CrossSecAtlas.htm Green, G.N., Jones, G.E., 1997, The digital geologic map of New Mexico in ARC/INFO format: U.S. Geological Survey Open-File Report 97-52. Available at URL http://pubs.er.usgs.gov/publication/ofr9752 Hart, D.L., McAda, D.P., 1985, Geohydrology of the High Plains Aquifer in southeastern New Mexico: U.S. Geological Survey Hydrologic Atlas 679. Available at URL http://pubs.er.usgs.gov/publication/ha679 Cederstrand, J.R., Becker, M.F., 1999, Digital map of aquifer boundary for the High Plains Aquifer in parts of Colorado, Kansas, Nebraska, New Mexico, Oklahoma, South Dakota, Texas, and Wyoming: U.S. Geological Survey Open-File Report 99-267. Available at URL http://pubs.er.usgs.gov/publication/ofr99267 Oklahoma: Becker, C.J., Runkle, D.L., Rea, A.H., 1997, Digital data sets that describe aquifer characteristics of the High Plains Aquifer in western Oklahoma: U.S. Geological Survey Open-File Report 96-451. Available at URL http://pubs.er.usgs.gov/publication/ofr96451 South Dakota: Cederstrand, J.R., Becker, M.F., 1999, Digital map of aquifer boundary for the High Plains Aquifer in parts of Colorado, Kansas, Nebraska, New Mexico, Oklahoma, South Dakota, Texas, and Wyoming: U.S. Geological Survey Open-File Report 99-267. Available at URL http://pubs.er.usgs.gov/publication/ofr99267 Texas: Texas Water Development Board, 2006, Major aquifer of Texas; NMAquifers.mdb (geodatabase); Major_aquifers (shapefile). Available at URL http://www.twdb.state.tx.us/mapping/gisdata.asp Wyoming: Cederstrand, J.R., Becker, M.F., 1999, Digital map of aquifer boundary for the High Plains Aquifer in parts of Colorado, Kansas, Nebraska, New Mexico, Oklahoma, South Dakota, Texas, and Wyoming: U.S. Geological Survey Open-File Report 99-267. Available at URL http://pubs.er.usgs.gov/publication/ofr99267</abstract>
+  <keywords vocabulary="gmd:topicCategory">
+    <keyword>High Plains aquifer</keyword>
+  </keywords>
+  <contact>
+    <contactAddress>
+      <type>mailing address</type>
+      <address>1300 SE Cardinal Ct., Bldg 10, Suite 100</address>
+      <city>Vancouver</city>
+      <administrativearea>WA</administrativearea>
+      <postalcode>98683</postalcode>
+      <country>USA</country>
+    </contactAddress>
+    <name></name>
+    <organization></organization>
+    <position></position>
+    <voice>360-993-8977</voice>
+    <fax>360-993-8981</fax>
+    <email>http://answers.usgs.gov/cgi-bin/gsanswers?pemail=h2oteam&amp;amp;subject=GIS+Dataset+ds543</email>
+    <role>Point of contact</role>
+  </contact>
+  <links>
+    <link format="" name="Shapefile" description="" mimeType="" size="" type="Local Area Network" url="file://\\IGSWWAWWWS097\G\HPGWAvailability\FinalHPBoundary\FinalFinalBoundary\ForNSDI_ds543\hp_bound2010"/>
+  </links>
+  <dates/>
+  <fees></fees>
+  <constraints type="Access">None</constraints>
+  <rights>Not to be used at scales greater than the resolution of this data set (varies by state).</rights>
+  <encoding></encoding>
+  <crs>
+    <spatialrefsys nativeFormat="Wkt">
+      <wkt></wkt>
+      <proj4></proj4>
+      <srsid>0</srsid>
+      <srid>0</srid>
+      <authid></authid>
+      <description></description>
+      <projectionacronym></projectionacronym>
+      <ellipsoidacronym></ellipsoidacronym>
+      <geographicflag>false</geographicflag>
+    </spatialrefsys>
+  </crs>
+  <extent>
+    <spatial maxz="0" dimensions="2" crs="EPSG:4326" maxy="2312747.25" minx="-805708.3125" maxx="-21500.35351599999921746" miny="983257.83458300004713237" minz="0"/>
+  </extent>
+</qgis>

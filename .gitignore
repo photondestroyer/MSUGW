@@ -1,2 +1,14 @@
 **/*.nc
-high_plains_quifer
+HPA_polygon
+**/*.zip
+**/*.png
+**/*.csv
+**/*.txt
+**/*.json
+merged_datasets
+**/*.tif
+smap file
+__pycache__
+**/*.pyc
+**/*.xlsx
+AmeriFlux_NEON_data_readme.pdf
