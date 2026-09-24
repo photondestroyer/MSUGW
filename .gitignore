@@ -12,3 +12,5 @@ __pycache__
 **/*.pyc
 **/*.xlsx
 AmeriFlux_NEON_data_readme.pdf
+quifer
+GOSIF
