@@ -34,20 +34,7 @@ values.
 
 ## 3. Category 1 — ET and Energy/Thermal Flux
 
-### 3.1 MODIS_ET_SSEBop_Merged_Ogallala.nc (270.7 MB)
-
-Source product: MODIS SSEBop evapotranspiration. Grid: 1235 by 779
-(approximately 1 km), EPSG:4326. Temporal extent: 1 January 2003 to
-21 May 2022, 699 steps at a median interval of 10 days (dekadal).
-
-| Variable | Dimensions | Type | Observed range (sample) | Remarks |
-|---|---|---|---|---|
-| et | time, y, x | int16 | 0 to 106 | Fill value -32768. Units are not recorded in the file [UNIT-ASSUMPTION: mm per dekad as stored]. |
-
-Quality: 100 percent of sampled cells contain valid (non-fill) data. Values
-are non-negative throughout the sample, consistent with an evapotranspiration
-flux. The record terminates in May 2022 and therefore does not cover the most
-recent drought years in full.
+###da
 
 ### 3.2 modis_et_v5_dekadal_2020_Ogallala.nc (113.3 MB)
 

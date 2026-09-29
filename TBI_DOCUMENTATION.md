@@ -723,3 +723,193 @@ until the producer pipeline is re-run with a non-empty 2020 date list**; the
 validator re-runs as-is on the fixed file (median maps, ROI time series and
 histograms generate automatically once `time > 0`).
 
+
+### 11.18 Differentiable-HBV (delta-model) pilot: training, Bi residual and ROI plots
+
+**Scope.** Staged δ-HBV groundwater-buffering pilot per user decisions
+2026-09-23 (ET + residual-buffering objective; pilot tile first; 2015-2022
+overlap window; static variant before dynamic parameterization). Code lives in
+`G:\MSU_GWB\delta_gwb\` (`config.py`, `data_tile.py`, `hbv.py`, `dpl.py`,
+`train.py`, `buffering.py`, `plot_roi_comparison.py`); trained weights plus a
+code snapshot are archived separately in `G:\MSU_GWB\delta_hbv_model\v1\`
+(`gA_weights.safetensors`, bit-verified against `best.pt`, with
+`ARCHITECTURE.md`). All source NetCDFs were opened read-only; every artifact
+was written to `delta_gwb/outputs/`.
+
+**Methods.** A mass-conservative discrete HBV backbone (snow, soil with
+γ-ET/β-runoff, upper/lower subsurface stores, gamma-UH routing) was
+implemented in PyTorch and regionalized by an LSTM parameter network
+(θ=gA(A,x), static parameters, no intermediate labels; Feng et al. 2022
+paradigm). Pilot tile: central Kansas lon -101…-99, lat 37.5…39.5, harmonized
+to the 4 km GRIDMET grid and masked to `hp_bound2010` (1,077 cells).
+Forcings P/T/Ep from GRIDMET; targets SSEBop dekadal ET totals plus SMAP
+daily root-zone soil-moisture standardized anomalies (loss = RMSE(ET) +
+0.25·RMSE(SM)). Splits: train 2015-2019 (2014 warmup), validate 2020, test
+2021-2022 (drought transferability, plan Sec. 6.7). Minibatches: 64 cells ×
+random 730-day windows; Adam 1e-3, seed 42. Buffering residual
+Bi = (obs − climatology) − (model − climatology) at dekad level during
+dry-downs (spi90d ≤ -1 with SM decline and high VPD); stratification by
+static-WTD terciles and irrigation flag; proximity validation at 3 off-tile
+AmeriFlux towers.
+
+**Results.** Best validation RMSE 16.15 mm/dekad (epoch 10, converged).
+Test (53,850 dekad pairs): RMSE 16.65, NSE 0.375, KGE 0.51, SM correlation
+0.26 — well above initialization but below dekad-climatology (RMSE 12.63,
+NSE 0.66), which is the documented trigger for stage 2 (multicomponent,
+dynamic γt/βt). Dry-down Bi (4,956 cell-dekads, 5.4 percent): mean +15.0,
+median +11.8 mm/dekad, against +5.1 overall and +4.5 non-dry. WTD
+stratification gives shallow +13.0 (n=1,170), mid +14.3, deep +16.8
+(terciles 16.7/25.5 m); all dry cells are irrigated-flagged (rainfed n=0).
+AmeriFlux proximity check: SSEBop RMSE 12.9-18.1 with model correlations
+0.55-0.75 across 158/59/49 dekads (US-KLS/A32/A74, 209-281 km off-tile).
+
+**Interpretation (plan pilot table).** Signal detectable, but three facts
+forbid a groundwater-buffering claim: a +4.5 global bias (HBV receives no
+irrigation water input while the tile is ~91 percent irrigated-flagged), a
+deep-worse-than-shallow gradient opposite to the buffering expectation, and
+complete irrigation confounding of the dry sample. Verdict: largely
+irrigation-driven/model-structural — revisit the signal definition (add an
+irrigation input or restrict to rainfed cells) before scaling, then stage 2.
+
+**Assumptions.** (1) Source-file units as stored: GRIDMET pr mm/day, T Kelvin,
+etr mm/day reference ET, SSEBop dekad totals in mm, SMAP volumetric fraction —
+each asserted at runtime with fail-loud range checks. (2) Static 2015 WTD is a
+spatial axis only, never a time series. (3) SMAP depth-to-water-table is 100
+percent fill over the tile (verified), so no dynamic well series enters;
+GRACE is basin-scale screening only. (4) gA static attributes exclude raw
+coordinates (24 dims: soils, PFT one-hot, crop/irrigation fractions, WTD,
+aridity). (5) Dry-down rule and WTD-tercile/irrigation splits are judgment
+thresholds. (6) Tower records assumed 30-minute; LE converted with λ=2.45 MJ/kg
+without QC filtering. (7) OCO-2 SIF soundings deferred to the carbon leg.
+
+**Placeholders.** HBV parameter bounds are literature-typical, not
+Ogallala-calibrated; input z-scales are fixed, not tuned; SM-loss weight 0.25
+is a judgment call; GIR class>0 as "irrigated" is generous at 8 km and needs
+LANID/CDL cross-check; tower collocation is nearest-cell without footprint
+modeling.
+
+**Additional datasets required.** USGS/state well-network water-level time
+series (primary ground truth for decline/recovery; blocks Sec. 6.3-6.5);
+LANID/CDL annual crop+irrigation; TROPOMI gridded SIF and GOSIF-equivalent
+carbon leg for decoupling (Sec. 6.6); GLEAM4/PML-V2 independent ET reference;
+NASS yield outcomes; DEM/slope for topographic stratification; SAPFLUXNET or
+isotope studies for water-source validation.
+
+**ROI figures (all in `delta_gwb/outputs/`).** `et_obs_vs_model_maps.png`
+(wettest/driest test dekads: observed, modeled, difference);
+`et_timeseries_compare.png` (tile-mean dekad series with dry shading);
+`et_scatter_compare.png` (cell-dekad scatter with 1:1 line, NSE/RMSE);
+`et_seasonal_compare.png` (test-window dekad-of-year means);
+`bi_timeseries.png`, `bi_map_examples.png`, `bi_by_wtd.png` (buffering
+residual diagnostics). NOTE (2026-09-29): the four `et_*` figures were
+regenerated after fixing a column-indexing bug in `plot_roi_comparison.py`
+(`np.searchsorted(te_win, m)` collapsed every dekad to test-day 0, i.e. an
+all-zero model series; correct mapping is `ETt[:, m]` since `m` already
+indexes the `ymd_full[te_win]` frame). Metrics in `metrics.json` and all
+`buffering.py` outputs were computed with the correct mapping and are
+unaffected.
+
+
+### 11.19 Three-model residual comparison on one ROI date (XGBoost vs pilot
+delta-HBV vs full-aquifer 256x2 delta-LSTM) + detailed metrics
+
+**Models.** (1) XGB: `gw_buffering_xgb/xgb_et_model.json`, expected-ET
+regressor, residual `Bi = ET_obs - ET_hat`, monthly means in
+`Bi_monthly_4km.nc` (mean of dekads starting in each month, 2016-2021).
+(2) PILOT delta-HBV: stage-1 static 1-component HBV + 128x1 gA, raw-ET
+target, global z-scores, central-Kansas tile only
+(`delta_gwb/outputs/best.pt`, test 2021-2022). (3) FULL 256x2 delta-LSTM:
+same HBV backbone + 256x2 gA (822,031 params), deseasonalized-anomaly
+target, per-cell z-scores, full aquifer 21,259 cells
+(`delta_gwb/outputs/full/best_full.pt`, ep 1, test 2021-2022). Sign
+convention is identical everywhere: residual = OBSERVED minus MODEL
+(positive = observed ET exceeds the model). Script:
+`delta_gwb/plot_model_comparison.py` -> `delta_gwb/outputs/comparison/`
+(`resid_map_compare.png`, `resid_scatter_compare.png`,
+`resid_monthly_2021.png`, `comparison_metrics.json`,
+`comparison_log.txt`).
+
+**ROI and date rule (deterministic).** ROI = pilot tile (lon -101…-99, lat
+37.5…39.5, 1,077 aquifer cells). Among 2021 dekads present in BOTH delta
+test windows with finite SSEBop obs, the dekad with the largest tile dry
+fraction (spi90d <= -1 at nearest preceding pentad) was selected; ties go
+to the latest date. Chosen: **dekad starting 2021-09-01, dry fraction 44
+percent** (36 year-2021 candidates); XGB contributes calendar month
+**2021-09**. Caveats: XGB is dekadly modeled but only monthly archived, so
+its panel is monthly support vs dekadal for the delta models; XGB maps live
+on the stride-2 sampled lattice, so only **490 of 1,077** tile cells carry
+XGB values (assumption A8 of 11.15).
+
+**Global held-out skill (different windows: XGB 2020-2021, delta models
+2021-2022).**
+
+| model | test RMSE (mm/dekad) | NSE / R2 | KGE | SM corr | n pairs |
+|---|---|---|---|---|---|
+| XGB holdout (dry RMSE 9.66) | 10.44 | 0.654 | - | - | 717,920 |
+| PILOT delta-HBV | 16.65 | 0.375 | 0.51 | 0.26 | 53,850 |
+| FULL 256x2 (raw / anomaly; clim = 1.0) | 15.10 / 1.93 | 0.30 | 0.41 | 0.20 | 1,062,950 |
+
+**ROI-date residuals (dekad 2021-09-01; XGB at 2021-09 monthly).**
+
+| model | n | bias | median | RMSE | spatial r | frac > 0 |
+|---|---|---|---|---|---|---|
+| PILOT (dekad) | 1,077 | +6.74 | +6.39 | 13.53 | 0.64 | 0.72 |
+| FULL 256x2 (dekad) | 1,077 | +12.34 | +12.74 | 17.14 | 0.65 | 0.84 |
+| XGB (monthly) | 490 | +6.63 | +6.65 | 10.22 | 0.71 | 0.79 |
+
+All three agree on the sign pattern (positive residuals over the high-ET
+south of the tile, near-zero/negative north; common ±32 color scale in
+`resid_map_compare.png`) and on spatial structure (r = 0.64-0.71), but
+differ in amplitude: XGB residuals are smallest, FULL largest. All three
+underpredict the high-ET tail (scatter clouds sit below the 1:1 line above
+~40 mm/dekad), consistent with unmodeled irrigation peaks.
+
+**2021 ROI-mean residual seasonality (`resid_monthly_2021.png`, delta
+dekads averaged to months).** All three models trace the same seasonal
+shape: near-zero/negative residuals in winter-spring (delta models go to
+about -5/-11 in April), a summer positive peak, and convergence in
+Sep-Oct. Amplitudes rank FULL > PILOT > XGB through Jun-Aug (June peaks
+roughly +28 / +20 / +13), i.e. the process models' missing-water signal is
+2-4x the statistical model's, then all three agree within a few mm/dekad
+in September-October when the dry fraction is highest. The September
+convergence is why the single-date table shows PILOT ≈ XGB on bias.
+
+**Buffering-residual attribution (dry vs placebo, WTD, management).**
+
+| model | Bi dry mean (median, n) | placebo | WTD shallow/mid/deep | tau | mgmt irrigated / rainfed / natural |
+|---|---|---|---|---|---|
+| XGB | +0.25 (+0.11; 46,820) | -0.02 (wet yrs) | +1.49 / -0.69 / +0.17 | +1.62 | +0.97 / -0.84 / -0.98 |
+| PILOT tile | +15.0 (+11.8; 4,956), overall +5.1, non-dry +4.5 | - | +13.0 / +14.3 / +16.8 | neg. gradient | all dry irrigated (rainfed n=0) |
+| FULL aquifer | +4.39 (-1.24; 318,447) | +0.63 (wet dekads) | +4.56 / +4.07 / +4.54 | +0.02 | +4.39 (316,469) / n=0 / +4.03 (1,978) |
+
+Only XGB passes all three attribution checks (small bounded residual,
+correct shallow>deep ordering, null placebo, clean irrigation split).
+PILOT fails on a +4.5 global bias and a backwards depth gradient with full
+irrigation confounding. FULL improves the bias (+3.7 global, +0.6 placebo)
+but its WTD gradient is flat (tau ≈ +0.02) and 99.4 percent of its dry
+cells are GIR-flagged irrigated, so the +4.4 dry residual cannot be
+assigned to groundwater either. The FULL mean/median split (+4.39 / -1.24)
+shows a right-skewed residual: typical cells near zero, a heavy tail of
+large positive misses at high-ET (irrigated) cells.
+
+**Detailed verdict.** Skill ranking on held-out ET: XGB > FULL ≈ PILOT,
+with the gap (~5 mm/dekad RMSE, ~0.3 NSE) far larger than domain/window
+differences can explain. Residual ranking (smaller + better attributed):
+XGB first by a wide margin; FULL second on bias magnitude but unattributed;
+PILOT last. The process models' value is not skill but mechanism
+(mass-conserved soil/groundwater stores, Q2 baseflow, interpretable
+parameters, SM constraint) — and their shared failure mode is diagnostic:
+weather-driven HBV without an irrigation water input cannot reproduce
+dekadal ET (worse than climatology on anomalies: 1.93 vs 1.0) and its dry
+residual carries no depth signature. The staged plan holds: add irrigation
+input (or restrict to rainfed cells with LANID/CDL), then stage-2 dynamic
+γt/βt, judged against the XGB bar (RMSE 10.44, tau +1.62, null placebo)
+and the ROI-date numbers above.
+
+**Limits specific to this comparison.** Cross-window globals (2020-21 vs
+2021-22); XGB monthly-vs-dekad support mismatch smooths its extremes;
+XGB lattice covers 45 percent of tile cells (spatial comparison is
+lattice-restricted); GIR>0 irrigation flag is generous at 4-8 km (LANID/CDL
+cross-check pending); single-date maps are illustrative — the monthly
+series and aquifer-wide Bi tables carry the statistical weight.
+
