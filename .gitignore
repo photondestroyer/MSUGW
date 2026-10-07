@@ -14,3 +14,5 @@ __pycache__
 AmeriFlux_NEON_data_readme.pdf
 quifer
 GOSIF
+residual_et_store
+zarr

@@ -817,8 +817,10 @@ delta-HBV vs full-aquifer 256x2 delta-LSTM) + detailed metrics
 regressor, residual `Bi = ET_obs - ET_hat`, monthly means in
 `Bi_monthly_4km.nc` (mean of dekads starting in each month, 2016-2021).
 (2) PILOT delta-HBV: stage-1 static 1-component HBV + 128x1 gA, raw-ET
-target, global z-scores, central-Kansas tile only
-(`delta_gwb/outputs/best.pt`, test 2021-2022). (3) FULL 256x2 delta-LSTM:
+target, global z-scores, trained on the central-Kansas tile
+(`delta_gwb/outputs/best.pt`, test 2021-2022) and additionally inferred
+over the full aquifer without retraining (see residual-mapping paragraph
+below). (3) FULL 256x2 delta-LSTM:
 same HBV backbone + 256x2 gA (822,031 params), deseasonalized-anomaly
 target, per-cell z-scores, full aquifer 21,259 cells
 (`delta_gwb/outputs/full/best_full.pt`, ep 1, test 2021-2022). Sign
@@ -858,8 +860,16 @@ XGB values (assumption A8 of 11.15).
 | XGB (monthly) | 490 | +6.63 | +6.65 | 10.22 | 0.71 | 0.79 |
 
 All three agree on the sign pattern (positive residuals over the high-ET
-south of the tile, near-zero/negative north; common ±32 color scale in
-`resid_map_compare.png`) and on spatial structure (r = 0.64-0.71), but
+south of the tile, near-zero/negative north; `resid_map_compare.png` shows
+the full `hp_bound2010` polygon as grey background with data pixels drawn on
+top (never outside it), a red dashed ROI box, and whole-aquifer residuals for
+all three models — PILOT was additionally run in inference-only mode over the
+full aquifer (`delta_gwb/pilot_full_infer.py` -> `outputs/full/ETpilot_full.npy`,
+21,259 cells × 1,096 days in ~3.5 min, no retraining; tile-fit global z-norm
+applied aquifer-wide as an out-of-sample caveat): PILOT aquifer bias +0.3 /
+RMSE 13.2, FULL aquifer +4.6 / 13.8, XGB monthly +0.7 / 7.2 — all on a common
+color scale) and on spatial structure
+(r = 0.64-0.71), but
 differ in amplitude: XGB residuals are smallest, FULL largest. All three
 underpredict the high-ET tail (scatter clouds sit below the 1:1 line above
 ~40 mm/dekad), consistent with unmodeled irrigation peaks.

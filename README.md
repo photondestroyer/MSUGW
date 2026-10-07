@@ -31,6 +31,9 @@ products reside in `merged_datasets/USGS data/derived_usgs/`.
   variables, temporal extents and sampled quality assessments.
 - `TBI_DOCUMENTATION.md` — methods, assumptions and results of the temporal
   buffering index analysis.
+- `RESIDUAL_ET_MODELS.md` — audit of the residual-ET models (XGBoost and the
+  differentiable LSTM-HBV), the corrected pipeline in `residual_et/`, and how
+  to run it. Supersedes the model results in `TBI_DOCUMENTATION.md` §11.15–11.19.
 - `Groundwater_Buffering_Research_Plan.docx` — overarching research plan.
 - `AmeriFlux_NEON_data_readme.pdf` — Flux tower data usage policy and definitions. (data is processed)
 
