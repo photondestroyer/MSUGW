@@ -1,7 +1,7 @@
 **/*.nc
 HPA_polygon
 **/*.zip
-**/*.png
+# **/*.png
 **/*.csv
 **/*.txt
 **/*.json
@@ -16,3 +16,4 @@ quifer
 GOSIF
 residual_et_store
 zarr
+**/*.npz
