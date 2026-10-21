@@ -1,100 +1,116 @@
-"""Time-axis and coordinate-grid checks for every .nc (cheap; coordinate variables only)."""
-import glob
+"""Time-axis and coordinate-grid checks for every .nc (cheap; coordinate variables only).
+
+Time steps are computed numerically from the units (only the first/last values are decoded), so the
+6.9 M-row sounding times of the OCO files and the per-record well times are handled too.
+"""
 import json
-import os
+import sys
 from collections import Counter
 
 import netCDF4
 import numpy as np
 
-ROOT = "G:/MSU_GWB/datasets/merged_datasets"
-files = sorted(glob.glob(ROOT + "/*.nc") + glob.glob(ROOT + "/USGS data/derived_usgs/**/*.nc", recursive=True))
+from audit_paths import OUT, nc_files, rel
+
+UNIT_HOURS = {"second": 1 / 3600, "minute": 1 / 60, "hour": 1, "day": 24}
 out = {}
 grids = {}
 
 
-def decode(ds, v, vals):
+def unit_hours(units):
+    u = units.split(" since ")[0].strip().lower().rstrip("s")
+    return UNIT_HOURS.get(u)
+
+
+def decode(v, vals):
     try:
-        return netCDF4.num2date(vals, v.units, getattr(v, "calendar", "standard"), only_use_cftime_datetimes=False, only_use_python_datetimes=True)
-    except Exception:  # noqa: BLE001
-        try:
-            return netCDF4.num2date(vals, v.units, getattr(v, "calendar", "standard"))
-        except Exception as e:  # noqa: BLE001
-            return f"decode failed: {e}"
+        return [str(x) for x in netCDF4.num2date(vals, v.units, getattr(v, "calendar", "standard"))]
+    except Exception as e:  # noqa: BLE001
+        return f"decode failed: {e}"
 
 
-for f in files:
-    name = os.path.basename(f)
+for f in nc_files(sys.argv[1:]):
+    name = rel(f)
     rep = {}
     ds = netCDF4.Dataset(f)
     for k, v in ds.variables.items():
         if v.ndim != 1:
             continue
+        units = str(getattr(v, "units", ""))
         isdim = k in ds.dimensions and v.dimensions == (k,)
-        if not (isdim or k in ("time", "lat", "lon", "x", "y")):
+        is_time = " since " in units
+        if not (isdim or is_time or k in ("lat", "lon", "x", "y")):
             continue
-        if v.dtype.kind in "SUO":
+        if v.dtype == str or v.dtype.kind in "SUO":
             continue
         v.set_auto_maskandscale(False)
-        a = v[:]
-        r = {"n": int(a.size), "dtype": str(a.dtype), "nan": int(np.isnan(a).sum()) if a.dtype.kind == "f" else 0,
-             "min": float(a.min()), "max": float(a.max())}
-        d = np.diff(a.astype(np.float64))
+        a = np.asarray(v[:])
+        fill = getattr(v, "_FillValue", None)
+        good = np.ones(a.shape, bool) if fill is None else (a != fill)
+        if a.dtype.kind == "f":
+            good &= np.isfinite(a)
+        r = {"n": int(a.size), "dim": v.dimensions[0], "dtype": str(a.dtype), "n_fill_or_nan": int((~good).sum())}
+        g = a[good].astype(np.float64)
+        if g.size:
+            r["min"], r["max"] = float(g.min()), float(g.max())
+        d = np.diff(g)
         if d.size:
             r["monotonic_inc"] = bool((d > 0).all())
             r["monotonic_dec"] = bool((d < 0).all())
-            r["n_nonpositive_steps"] = int((d <= 0).sum()) if not (d < 0).all() else 0
-            r["n_duplicates"] = int(a.size - len(np.unique(a)))
-            uniq = Counter(np.round(d, 6).tolist())
-            r["step_counts_top"] = uniq.most_common(8)
+            r["n_decreasing_steps"] = int((d < 0).sum())
+            r["n_zero_steps"] = int((d == 0).sum())
+            r["n_duplicates"] = int(g.size - len(np.unique(g)))
             if k in ("x", "y", "lat", "lon"):
+                r["step_counts_top"] = Counter(np.round(d, 9).tolist()).most_common(4)
                 r["step_min"], r["step_max"], r["step_mean"] = float(d.min()), float(d.max()), float(d.mean())
                 r["step_rel_spread"] = float((d.max() - d.min()) / abs(d.mean())) if d.mean() else None
-        if k == "time" or "since" in str(getattr(v, "units", "")):
-            dt = decode(ds, v, a)
-            if not isinstance(dt, str):
-                r["first"], r["last"] = str(dt[0]), str(dt[-1])
-                if a.size > 1:
-                    dd = np.diff(np.array([np.datetime64(x.replace(tzinfo=None) if hasattr(x, "tzinfo") else x) for x in dt]).astype("datetime64[h]")).astype(np.int64)
-                    r["step_hours_counts"] = Counter(dd.tolist()).most_common(8)
-                    big = np.where(dd > np.median(dd) * 1.5)[0]
-                    r["n_gaps_gt1.5x_median"] = int(big.size)
-                    r["gaps_sample"] = [(str(dt[i]), str(dt[i + 1]), int(dd[i])) for i in big[:12]]
-            else:
-                r["decode"] = dt
-            r["units"] = getattr(v, "units", None)
+        if is_time and g.size:
+            r["units"] = units
+            r["first_last_decoded"] = decode(v, np.array([g[0], g[-1]]))
+            r["min_max_decoded"] = decode(v, np.array([g.min(), g.max()]))
+            uh = unit_hours(units)
+            if uh and g.size > 1 and isdim:
+                dh = np.round(d * uh, 3)
+                r["step_hours_counts"] = Counter(dh.tolist()).most_common(8)
+                med = float(np.median(dh))
+                big = np.where(dh > med * 1.5)[0]
+                r["median_step_hours"] = med
+                r["n_gaps_gt1.5x_median"] = int(big.size)
+                big_sorted = big[np.argsort(-dh[big])][:15]
+                dec = decode(v, np.concatenate([g[big_sorted], g[big_sorted + 1]])) if big.size else []
+                if isinstance(dec, list):
+                    nb = len(big_sorted)
+                    r["largest_gaps"] = [(dec[i], dec[i + nb], float(dh[j])) for i, j in enumerate(big_sorted)]
         rep[k] = r
-        if k in ("x", "y", "lat", "lon") and v.ndim == 1:
+        if k in ("x", "y", "lat", "lon"):
             grids.setdefault(name, {})[k] = a
-    # compare against GeoTransform attrs of grid_mapping variable
     for gm in ("spatial_ref", "crs"):
         if gm in ds.variables and "GeoTransform" in ds.variables[gm].ncattrs():
             gt = [float(s) for s in ds.variables[gm].getncattr("GeoTransform").split()]
             rep["_geotransform"] = gt
-            if "x" in rep and "y" in rep:
-                x = grids[name]["x"]
-                y = grids[name]["y"]
-                px, py = gt[1], gt[5]
-                rep["_x_vs_gt_maxdev_px"] = float(np.abs(x - (gt[0] + (np.arange(x.size) + 0.5) * px)).max() / abs(px))
-                rep["_y_vs_gt_maxdev_px"] = float(np.abs(y - (gt[3] + (np.arange(y.size) + 0.5) * py)).max() / abs(py))
+            xs = grids.get(name, {}).get("x", grids.get(name, {}).get("lon"))
+            ys = grids.get(name, {}).get("y", grids.get(name, {}).get("lat"))
+            if xs is not None and ys is not None:
+                rep["_x_vs_gt_maxdev_px"] = float(np.abs(xs - (gt[0] + (np.arange(xs.size) + 0.5) * gt[1])).max() / abs(gt[1]))
+                rep["_y_vs_gt_maxdev_px"] = float(np.abs(ys - (gt[3] + (np.arange(ys.size) + 0.5) * gt[5])).max() / abs(gt[5]))
     ds.close()
     out[name] = rep
-    print(name)
+    print("##", name)
     for k, r in rep.items():
-        if k.startswith("_"):
-            print("   ", k, r)
-        else:
-            show = {kk: vv for kk, vv in r.items() if kk not in ("dtype",)}
-            print("   ", k, show)
+        print("   ", k, r if k.startswith("_") else {kk: vv for kk, vv in r.items() if kk != "dtype"})
 
-# 4 km grid identity across files
-print("\n== grid equality (x,y) among the 287x181 files")
-ref = None
+print("\n== grid equality among files with identical x/y (or lat/lon) sizes")
+by_shape = {}
 for name, g in grids.items():
-    if "x" in g and "y" in g and g["x"].size == 181 and g["y"].size == 287:
-        if ref is None:
-            ref = (name, g)
-        else:
-            print(name, "x equal:", bool(np.array_equal(g["x"], ref[1]["x"])), "maxdiff", float(np.abs(g["x"] - ref[1]["x"]).max()),
-                  "| y equal:", bool(np.array_equal(g["y"], ref[1]["y"])), "maxdiff", float(np.abs(g["y"] - ref[1]["y"]).max()), "vs", ref[0])
-json.dump(out, open(os.path.dirname(os.path.abspath(__file__)) + "/results/coord_checks.json", "w"), indent=1, default=str)
+    xs = g.get("x", g.get("lon"))
+    ys = g.get("y", g.get("lat"))
+    if xs is None or ys is None or xs.ndim != 1:
+        continue
+    by_shape.setdefault((ys.size, xs.size), []).append((name, xs, ys))
+for shp, lst in by_shape.items():
+    if len(lst) < 2:
+        continue
+    ref = lst[0]
+    for name, xs, ys in lst[1:]:
+        print(shp, name, "vs", ref[0], "| x maxdiff", float(np.abs(xs - ref[1]).max()), "| y maxdiff", float(np.abs(ys - ref[2]).max()))
+json.dump(out, open(OUT + "/coord_checks.json", "w"), indent=1, default=str)

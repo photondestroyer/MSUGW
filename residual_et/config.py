@@ -171,7 +171,14 @@ HBV_BOUNDS = dict(
     K0=(0.05, 0.9), K1=(0.01, 0.5), K2=(0.001, 0.2), UZL=(0.0, 100.0), TT=(-2.0, 2.0),
     DD=(1.0, 6.0), CWH=(0.0, 0.3), CFR=(0.0, 0.8), ROUT_A=(0.5, 6.0), ROUT_TAU=(0.5, 10.0),
 )
-DLSTM = dict(hidden=256, layers=2, dropout=0.0, win=730, warm=365, lr=1e-3, epochs=30,
+DLSTM = dict(hidden=256, layers=2, win=730, warm=365, lr=1e-3, epochs=30,
+             # regularisation against overfitting
+             dropout=0.2,          # between the LSTM layers and before the output layer
+             weight_decay=1e-4,    # AdamW, decoupled L2 on the network weights
+             patience=6,           # stop after this many epochs without a real improvement
+             min_delta=0.002,      # ... where 'real' means the validation loss fell by this much
+             lr_factor=0.5, lr_patience=2,   # halve the learning rate after 2 flat epochs
+
              batch_cells=64, windows_per_step=4, val_cells=512, sm_weight=0.25,
              et_sd_floor=3.0,     # mm/dekad; keeps winter dekads from dominating the loss
              sm_pct=(1.0, 99.0),  # per-cell soil-moisture range used for relative saturation

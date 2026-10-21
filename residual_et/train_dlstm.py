@@ -183,20 +183,25 @@ def train(profile_name, fold, member=0, epochs=None, resume=False, device=None, 
     dev = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
     data = Data(store, fold)
     model = Model(data.A.shape[1], dev)
-    opt = torch.optim.Adam(model.gA.parameters(), lr=CFG["lr"])
+    opt = torch.optim.AdamW(model.gA.parameters(), lr=CFG["lr"], weight_decay=CFG["weight_decay"])
+    sched = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, factor=CFG["lr_factor"],
+                                                       patience=CFG["lr_patience"])
+    flat, stopped = 0, False                  # epochs since the last real improvement
     win, warm, B, Kw = CFG["win"], CFG["warm"], CFG["batch_cells"], CFG["windows_per_step"]
     starts = valid_starts(data, win, warm)
     if starts.size == 0:
         raise RuntimeError("no training window holds three training dekads; check the split")
     val_cells = np.random.default_rng(7).permutation(data.n_cells)[:CFG["val_cells"]]
     epoch0, best, logp, lastp = 0, float("inf"), out / "train_log.csv", out / "last.pt"
-    header = "epoch,train_loss,train_et,train_sm,val_loss,val_et,val_sm,seconds\n"
+    header = "epoch,train_loss,train_et,train_sm,val_loss,val_et,val_sm,lr,seconds\n"
     if resume:
         if not lastp.exists():
             raise FileNotFoundError(f"--resume: {lastp} not found")
         ck = torch.load(lastp, map_location=dev, weights_only=False)
         model.gA.load_state_dict(ck["gA"])
         opt.load_state_dict(ck["opt"])
+        sched.load_state_dict(ck["sched"])
+        flat = ck["flat"]
         rng.bit_generator.state = ck["np_rng"]
         torch.set_rng_state(ck["torch_rng"].cpu())      # map_location moved it to the GPU
         epoch0, best = ck["epoch"] + 1, ck["best"]
@@ -210,6 +215,11 @@ def train(profile_name, fold, member=0, epochs=None, resume=False, device=None, 
     print(f"fold {fold} member {member}: {data.n_cells} cells, {starts.size} window starts, "
           f"{steps} steps/epoch, device {dev}", flush=True)
     for ep in range(epoch0, epoch0 + n_epochs):
+        if flat >= CFG["patience"]:           # early stopping on diminishing returns
+            stopped = True
+            print(f"early stop: validation loss has not improved by {CFG['min_delta']} for {flat} "
+                  f"epochs (best {best:.4f}); best.pt holds the best epoch", flush=True)
+            break
         model.gA.train()
         perm = rng.permutation(data.n_cells)
         acc, nacc, ptr = np.zeros(3), 0, 0
@@ -232,17 +242,20 @@ def train(profile_name, fold, member=0, epochs=None, resume=False, device=None, 
         tr = acc / max(nacc, 1)
         with open(logp, "a") as fh:
             fh.write(f"{ep},{tr[0]:.5f},{tr[1]:.5f},{tr[2]:.5f},{v[0]:.5f},{v[1]:.5f},{v[2]:.5f},"
-                     f"{time.time() - t0:.0f}\n")
+                     f"{opt.param_groups[0]['lr']:.2e},{time.time() - t0:.0f}\n")
+        sched.step(v[0])                      # halve the learning rate when validation goes flat
+        flat = 0 if (np.isfinite(v[0]) and v[0] < best - CFG["min_delta"]) else flat + 1
         if np.isfinite(v[0]) and v[0] < best:                 # selection on the trained quantity
             best = v[0]
             save_atomic({"gA": model.gA.state_dict(), "epoch": ep, "val": v[0]}, out / "best.pt")
         save_atomic({"gA": model.gA.state_dict(), "opt": opt.state_dict(), "epoch": ep, "best": best,
+                     "sched": sched.state_dict(), "flat": flat,
                      "np_rng": rng.bit_generator.state, "torch_rng": torch.get_rng_state()}, lastp)
         print(f"epoch {ep:02d} train {tr[0]:.4f} (et {tr[1]:.4f}, sm {tr[2]:.4f}) "
               f"val {v[0]:.4f} (et {v[1]:.4f}, sm {v[2]:.4f}) best {best:.4f} "
               f"[{time.time() - t0:.0f}s]", flush=True)
     (out / "run.json").write_text(json.dumps(dict(
-        fold=fold, member=member, seed=seed, epochs_done=epoch0 + n_epochs, best_val=best,
+        fold=fold, member=member, seed=seed, stopped_early=stopped, best_val=best,
         static_inputs=list(C.DLSTM_STATIC), cfg=CFG, hbv_bounds=C.HBV_BOUNDS), indent=1))
     return best
 

@@ -1,0 +1,78 @@
+== modis_et_v5_dekadal_2020_Ogallala.nc vs MODIS_ET_SSEBop_Merged_Ogallala.nc: 36 records, 36 found in the larger file, 36 compared
+   x identical: True
+   y identical: True
+   et               differing cells:          0
+== Global_irrigation_Area_2001_Ogallala.nc vs Global_irrigation_Area_Merged_Ogallala.nc: 1 records, 1 found in the larger file, 1 compared
+   x identical: True
+   y identical: True
+   classification   differing cells:          0
+== GRIDMET_Ogallala_lab_drive.nc vs GRIDMET_Ogallala_lab_latest.nc: 14610 records, 14610 found in the larger file, 585 compared
+   lat identical: True
+   lon identical: True
+   bi               differing cells:          0
+   erc              differing cells:          0
+   etr              differing cells:          0
+   fm100            differing cells:          0
+   fm1000           differing cells:          0
+   pet              differing cells:          0
+   pr               differing cells:          0
+   rmax             differing cells:          0
+   rmin             differing cells:          0
+   sph              differing cells:          0
+   srad             differing cells:          0
+   th               differing cells:          0
+   tmmn             differing cells:          0
+   tmmx             differing cells:          0
+   vpd              differing cells:          0
+   vs               differing cells:          0
+== GRIDMET_DROUGHT_Ogallala_lab.nc vs GRIDMET_DROUGHT_Ogallala_lab_colab.nc: 3413 records, 3413 found in the larger file, 137 compared
+   lat identical: True
+   lon identical: True
+   eddi14d          differing cells:          0
+   eddi14d_category differing cells:          0
+   eddi180d         differing cells:          0
+   eddi180d_category differing cells:          0
+   eddi1y           differing cells:          0
+   eddi1y_category  differing cells:          0
+   eddi270d         differing cells:          0
+   eddi270d_category differing cells:          0
+   eddi2y           differing cells:          0
+   eddi2y_category  differing cells:          0
+   eddi30d          differing cells:          0
+   eddi30d_category differing cells:          0
+   eddi5y           differing cells:          0
+   eddi5y_category  differing cells:          0
+   eddi90d          differing cells:          0
+   eddi90d_category differing cells:          0
+   pdsi             differing cells:          0
+   pdsi_category    differing cells:          0
+   spei14d          differing cells:          0
+   spei14d_category differing cells:          0
+   spei180d         differing cells:          0
+   spei180d_category differing cells:          0
+   spei1y           differing cells:          0
+   spei1y_category  differing cells:          0
+   spei270d         differing cells:          0
+   spei270d_category differing cells:          0
+   spei2y           differing cells:          0
+   spei2y_category  differing cells:          0
+   spei30d          differing cells:          0
+   spei30d_category differing cells:          0
+   spei5y           differing cells:          0
+   spei5y_category  differing cells:          0
+   spei90d          differing cells:          0
+   spei90d_category differing cells:          0
+   spi14d           differing cells:          0
+   spi14d_category  differing cells:          0
+   spi180d          differing cells:          0
+   spi180d_category differing cells:          0
+   spi1y            differing cells:          0
+   spi1y_category   differing cells:          0
+   spi270d          differing cells:          0
+   spi270d_category differing cells:          0
+   spi2y            differing cells:          0
+   spi2y_category   differing cells:          0
+   spi30d           differing cells:          0
+   spi30d_category  differing cells:          0
+   spi5y            differing cells:          0
+   spi5y_category   differing cells:          0

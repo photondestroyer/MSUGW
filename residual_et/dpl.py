@@ -15,10 +15,11 @@ class ParamNet(nn.Module):
         super().__init__()
         self.lstm = nn.LSTM(input_size=n_dyn + n_attr, hidden_size=hidden, num_layers=layers,
                             dropout=dropout if layers > 1 else 0.0, batch_first=True)
+        self.drop = nn.Dropout(dropout)
         self.head = nn.Linear(hidden, n_param)
 
     def forward(self, dyn, A):
         """dyn (B, T, n_dyn), A (B, n_attr) -> raw parameters (B, n_param)."""
         sta = A.unsqueeze(1).expand(-1, dyn.shape[1], -1)
         _, (h, _) = self.lstm(torch.cat([dyn, sta], dim=-1))
-        return self.head(h[-1])
+        return self.head(self.drop(h[-1]))
