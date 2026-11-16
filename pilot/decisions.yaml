@@ -1,0 +1,531 @@
+# Pilot decision log (GW_ET_High_Plains_pilot.docx, Section 3: "Record every fixed value ... and its reason
+# before the result it affects is seen").
+#
+# Every entry starts as `proposed`. A task that uses an entry refuses real data (stage2, stage3) until the
+# entry is `fixed`:   python -m pilot decisions fix D04 --by "<name>"
+# A fixed value is changed only with:   python -m pilot decisions amend D04 --value '<json>' --reason "..."
+# which appends the old value to `history` (never overwritten). Decision values are part of every task
+# signature, so a change produces new output folders and the old ones stay.
+- id: D01
+  title: Reference ET for the deficit
+  value:
+    variable: pet
+    name: grass reference ET (gridMET ETo)
+  reason: The pilot asks to choose grass or alfalfa once. Grass reference ET is the FAO-56 standard and the reference
+    OpenET uses for its ET fraction, so deficit and any ET/ETo ratio share one reference.
+  tasks:
+  - '1.1'
+  - '2.5'
+  - '2.6'
+  - '2.9'
+  status: fixed
+  proposed_by: Claude
+  proposed_on: '2026-11-14'
+  fixed_by: ishan sinha
+  fixed_on: '2026-11-17'
+  history: []
+- id: D02
+  title: Study counties
+  value:
+    state_fips: '20'
+    min_overlap_km2: 1.0
+  reason: The pilot covers "all Kansas counties over the High Plains aquifer (GMD 1 to 5)". A county is in when
+    its polygon overlaps a GMD polygon by at least 1 km2, which drops boundary slivers from digitising.
+  tasks:
+  - counties
+  - '0.2'
+  - '1.1'
+  status: fixed
+  proposed_by: Claude
+  proposed_on: '2026-11-14'
+  fixed_by: ishan sinha
+  fixed_on: '2026-11-17'
+  history: []
+- id: D03
+  title: Cells
+  value:
+    source: BLM CadNSDI First Division sections
+    split: four quarters by the section's own axes
+    min_ha: 55
+    max_ha: 75
+  reason: No full quarter-section layer exists for Kansas (the BLM Second Division layer holds only 17,084 surveyed
+    lots). Each section is split into four quarters through its centre along its own axes. A regular quarter is
+    64.7 ha; quarters outside 55-75 ha (short sections, correction lines) are kept but flagged and excluded from
+    the cohort and rainfed sets.
+  tasks:
+  - '0.2'
+  status: fixed
+  proposed_by: Claude
+  proposed_on: '2026-11-14'
+  fixed_by: ishan sinha
+  fixed_on: '2026-11-17'
+  history: []
+- id: D04
+  title: Irrigated cell-year
+  value:
+    min_share: 0.5
+  reason: A cell counts as irrigated in a year when at least half of its mapped pixels are irrigated. A full centre
+    pivot covers about 78% of a quarter section and a corner-system pivot about 90%, so 50% keeps pivots and rejects
+    small irrigated corners.
+  tasks:
+  - '0.2'
+  status: fixed
+  proposed_by: Claude
+  proposed_on: '2026-11-14'
+  fixed_by: ishan sinha
+  fixed_on: '2026-11-17'
+  history: []
+- id: D05
+  title: Corn cell-year
+  value:
+    min_share: 0.5
+    cdl_codes:
+    - 1
+    - 12
+    - 13
+  reason: A cell counts as corn in a year when at least half of its pixels are CDL corn (field corn, sweet corn,
+    popcorn). Same share as D04 so a pivot of corn qualifies.
+  tasks:
+  - '0.2'
+  status: fixed
+  proposed_by: Claude
+  proposed_on: '2026-11-14'
+  fixed_by: ishan sinha
+  fixed_on: '2026-11-17'
+  history: []
+- id: D06
+  title: Primary irrigation map and disagreement
+  value:
+    primary: LANID
+    check: AIM-HPA
+    min_agree_years: 3
+    min_map_coverage: 0.9
+  reason: 'LANID is the primary map (changed from AIM-HPA on 2026-11-15 at the user''s instruction, before any cell
+    label was used). One product then gives the 2011-2015 labels, the later-irrigation check of 2016-2020 and the
+    footprint check of 2018-2020. AIM-HPA (built for the High Plains aquifer, on disk for 2011-2017) is the secondary
+    check: a cell whose irrigated/not-irrigated label (D04 applied to each map) agrees between the maps in fewer
+    than 3 of 2011-2015 is excluded with reason "irrigation maps disagree". The LANID file holds labels only inside
+    the aquifer polygon, so a yearly share counts as known only when the map labels at least 90% of the cell''s
+    pixels (min_map_coverage); a cell cut by the aquifer boundary is otherwise labelled from a sliver.'
+  tasks:
+  - '0.2'
+  status: fixed
+  proposed_by: ishan sinha (primary map); Claude (min_map_coverage)
+  proposed_on: '2026-11-15'
+  fixed_by: ishan sinha
+  fixed_on: '2026-11-17'
+  history: []
+- id: D07
+  title: Rainfed cell
+  value:
+    max_irr_share: 0.02
+    min_cropland_share: 0.5
+  reason: '"No irrigation in 2011-2015": at most 2% irrigated pixels in every year in both maps (allows edge pixels
+    of a neighbouring pivot). "Cropland": at least half the cell is CDL cropland or fallow in every year.'
+  tasks:
+  - '0.2'
+  status: fixed
+  proposed_by: Claude
+  proposed_on: '2026-11-14'
+  fixed_by: ishan sinha
+  fixed_on: '2026-11-17'
+  history: []
+- id: D08
+  title: Crop history and rainfed matching
+  value:
+    dominant_min_share: 0.5
+    dominant_min_years: 2
+    rzws_tol_mm: 25
+  reason: A cell's crop class is the CDL class (corn, soybean, sorghum, wheat, ...) dominant (>= 50% of the cell)
+    in at least 2 of 2013-2015; otherwise "rotation". A rainfed cell is matched when a cohort cell of the same county
+    and crop class has root-zone available water storage within 25 mm (about one soil-texture class).
+  tasks:
+  - '0.2'
+  - '2.5'
+  status: fixed
+  proposed_by: Claude
+  proposed_on: '2026-11-14'
+  fixed_by: ishan sinha
+  fixed_on: '2026-11-17'
+  history: []
+- id: D09
+  title: Surface-water flag
+  value:
+    radius_km: 1.6
+    sources:
+    - S
+    irrigation_use: any AF_USED_IRR or ACRES > 0 in 1990-2023
+  reason: A cell is "served by surface water" when a WIMAS surface-water point of diversion with irrigation use
+    lies within 1.6 km (one mile) of its centre. One mile covers a ditch lateral reaching neighbouring quarters.
+  tasks:
+  - '0.2'
+  status: fixed
+  proposed_by: Claude
+  proposed_on: '2026-11-14'
+  fixed_by: ishan sinha
+  fixed_on: '2026-11-17'
+  history: []
+- id: D10
+  title: Dry episode
+  value:
+    within: one season
+    link: counties sharing a border
+    multiyear: report alongside
+  reason: '"A drought that covers neighbouring counties in the same period counts as one episode": dry seasons (D20)
+    of counties that share a border in the same year form one episode. A second count that also merges consecutive
+    dry years sharing a county is reported next to it, never instead of it.'
+  tasks:
+  - '1.1'
+  - '2.1'
+  - '2.6'
+  status: fixed
+  proposed_by: Claude
+  proposed_on: '2026-11-14'
+  fixed_by: ishan sinha
+  fixed_on: '2026-11-17'
+  history: []
+- id: D11
+  title: Footprint value
+  value:
+    grid: EASE-Grid 2.0 36 km
+    min_nested_9km: 8
+  reason: A footprint is a 36 km EASE-Grid 2.0 cell, the radiometer's native resolution. Its value on a date is
+    the mean of its valid nested 9 km retrievals, required for at least 8 of the 16 so half the footprint is seen.
+  tasks:
+  - '1.2'
+  - '1.3'
+  status: fixed
+  proposed_by: Claude
+  proposed_on: '2026-11-14'
+  fixed_by: ishan sinha
+  fixed_on: '2026-11-17'
+  history: []
+- id: D12
+  title: Footprint irrigation
+  value:
+    map: AIM-HPA
+    years:
+    - 2011
+    - 2015
+    max_irr_share: 0.05
+    min_label_coverage: 0.9
+  reason: '"Less than 5% irrigated area", read as the largest yearly irrigated share in 2011-2015 under 5%. AIM-HPA
+    must cover at least 90% of the footprint, so an unmapped part cannot hide irrigation.'
+  tasks:
+  - '1.2'
+  status: fixed
+  proposed_by: Claude
+  proposed_on: '2026-11-14'
+  fixed_by: ishan sinha
+  fixed_on: '2026-11-17'
+  history: []
+- id: D13
+  title: Footprint radius and its one widening
+  value:
+    radius_km: 100
+    fallback_km: 150
+    min_footprints: 3
+    min_share_counties: 0.8
+  reason: 'The pilot allows "one widening to 150 km if it is decided beforehand". Rule fixed now: footprint centres
+    within 100 km of the county centroid; if fewer than 80% of counties then have at least 3 reference footprints,
+    150 km is used for every county (not county by county).'
+  tasks:
+  - '1.2'
+  - '2.2'
+  status: fixed
+  proposed_by: Claude
+  proposed_on: '2026-11-14'
+  fixed_by: ishan sinha
+  fixed_on: '2026-11-17'
+  history: []
+- id: D14
+  title: Similar rainfall and soils
+  value:
+    normal_years:
+    - 1991
+    - 2020
+    rain_tol_frac: 0.2
+    rzws_tol_frac: 0.3
+  reason: Normal May-September rainfall (gridMET 1991-2020) of the footprint within 20% of the county's, and mean
+    root-zone storage within 30% where gSSURGO covers at least half the footprint. Outside that coverage soils are
+    "unknown" and the footprint is kept but counted as soil-unknown.
+  tasks:
+  - '1.2'
+  status: fixed
+  proposed_by: Claude
+  proposed_on: '2026-11-14'
+  fixed_by: ishan sinha
+  fixed_on: '2026-11-17'
+  history: []
+- id: D15
+  title: Footprint weights
+  value:
+    weights: equal
+  reason: Equal weights among a county's supported reference footprints. Distance weights would let one near footprint
+    dominate; footprints are already restricted by distance and similarity.
+  tasks:
+  - '1.3'
+  status: fixed
+  proposed_by: Claude
+  proposed_on: '2026-11-14'
+  fixed_by: ishan sinha
+  fixed_on: '2026-11-17'
+  history: []
+- id: D16
+  title: SMAP overpass
+  value:
+    overpass: am
+  reason: The 6 am descending overpass is closest to thermal equilibrium of soil and canopy and is the SMAP team's
+    baseline; in the files PM is far sparser (about 1% valid against 19% AM).
+  tasks:
+  - '1.3'
+  status: fixed
+  proposed_by: Claude
+  proposed_on: '2026-11-14'
+  fixed_by: ishan sinha
+  fixed_on: '2026-11-17'
+  history: []
+- id: D17
+  title: SMAP quality flag
+  value:
+    retrieval_qual_flag_bit0: 0
+  reason: Keep retrievals whose retrieval_qual_flag bit 0 is 0 ("recommended quality", SPL3SMP_E user guide).
+  tasks:
+  - '1.3'
+  status: fixed
+  proposed_by: Claude
+  proposed_on: '2026-11-14'
+  fixed_by: ishan sinha
+  fixed_on: '2026-11-17'
+  history: []
+- id: D18
+  title: SMAP climatology
+  value:
+    years:
+    - 2015
+    - 2024
+    min_years: 5
+    anomaly: z by footprint and calendar month
+  reason: S is standardised by calendar month. SMAP starts 2015-04, so 2015-2024 is the longest record that ends
+    with the panel; at least 5 supported years per footprint-month are needed for a mean and SD.
+  tasks:
+  - '1.3'
+  status: fixed
+  proposed_by: Claude
+  proposed_on: '2026-11-14'
+  fixed_by: ishan sinha
+  fixed_on: '2026-11-17'
+  history: []
+- id: D19
+  title: Valid county month of S
+  value:
+    min_supported_footprints: 2
+  reason: A county's monthly S needs at least 2 supported reference footprints, so one footprint's noise or gap
+    never stands for the county.
+  tasks:
+  - '1.3'
+  - '2.1'
+  status: fixed
+  proposed_by: Claude
+  proposed_on: '2026-11-14'
+  fixed_by: ishan sinha
+  fixed_on: '2026-11-17'
+  history: []
+- id: D20
+  title: Dry conditions (blinding)
+  value:
+    season_pct: 70
+    s_pct: 30
+    missing_s_is_dry: true
+    months:
+    - 5
+    - 6
+    - 7
+    - 8
+    - 9
+  reason: The pilot's own definition. Percentiles over all Kansas county-years (seasons) and county-months (S) of
+    2016-2024. A month is dry when its season is dry or its S is below the 30th percentile or missing.
+  tasks:
+  - dry
+  - et_cells
+  - '2.1'
+  - '2.6'
+  status: fixed
+  proposed_by: Claude
+  proposed_on: '2026-11-14'
+  fixed_by: ishan sinha
+  fixed_on: '2026-11-17'
+  history: []
+- id: D21
+  title: ET model coverage of a cell-month
+  value:
+    min_valid_share: 0.8
+    min_models: 4
+  reason: A model counts for a cell-month when at least 80% of the cell's pixels hold a value with a positive observation
+    count (count 0 means OpenET filled the month from other dates). A cell-month is supported with at least 4 of
+    the 6 models (pilot target).
+  tasks:
+  - '1.4'
+  - et_cells
+  - '2.3'
+  status: fixed
+  proposed_by: Claude
+  proposed_on: '2026-11-14'
+  fixed_by: ishan sinha
+  fixed_on: '2026-11-17'
+  history: []
+- id: D22
+  title: Wells and water levels
+  value:
+    kgs: winter table
+    usgs_months:
+    - 1
+    - 2
+    - 3
+    - 4
+    usgs_status:
+    - Static
+    keep_code_prefixes:
+    - '11'
+    - '12'
+    blank_code: keep inside KGS HPA extent
+    land_surface: GLO30 DEM at the well
+  reason: KGS winter levels are measured when pumps are idle (recovered). USGS records add only January-April "Static"
+    levels. Aquifer codes 11x/12x (Quaternary, Pleistocene, Ogallala) are the High Plains aquifer; other codes (Dakota,
+    Permian, bedrock) are excluded; a blank code is kept inside the KGS HPA extent. Land-surface elevation for every
+    well comes from one source (GLO30 DEM) because reported altitudes mix NGVD29 and NAVD88.
+  tasks:
+  - '1.5'
+  - '2.4'
+  status: fixed
+  proposed_by: Claude
+  proposed_on: '2026-11-14'
+  fixed_by: ishan sinha
+  fixed_on: '2026-11-17'
+  history: []
+- id: D23
+  title: Water-table interpolation
+  value:
+    method: regression kriging
+    drift: land-surface elevation
+    variogram: exponential
+    neighbours: 32
+    max_km: 40
+    per: year
+  reason: Water-table elevation follows land surface closely in the High Plains; regression on land-surface elevation
+    removes that trend and the residual is kriged (exponential variogram fitted each year), giving a kriging variance
+    for every cell. Local neighbourhoods of 32 wells within 40 km keep it fast and local.
+  tasks:
+  - '2.4'
+  status: fixed
+  proposed_by: Claude
+  proposed_on: '2026-11-14'
+  fixed_by: ishan sinha
+  fixed_on: '2026-11-17'
+  history: []
+- id: D24
+  title: Aquifer base and its uncertainty
+  value:
+    base: KGS section hpa_bedrock
+    se: 1.4826 x MAD of (USGS bottom - KGS base) by GMD
+  reason: The KGS base is built from 37,026 Kansas bedrock picks and is the most local surface. Its error is taken
+    from the spread against the independent USGS 1998 surface (typical difference about 24 ft), by GMD.
+  tasks:
+  - '2.4'
+  status: fixed
+  proposed_by: Claude
+  proposed_on: '2026-11-14'
+  fixed_by: ishan sinha
+  fixed_on: '2026-11-17'
+  history: []
+- id: D25
+  title: Poor thickness estimate
+  value:
+    max_rel_se: 0.5
+    max_well_km: 8
+  reason: A cell-year is excluded ("poor thickness") when the standard error of A exceeds half of A or the nearest
+    measured well of that pre-season is farther than 8 km (the pilot's support distance).
+  tasks:
+  - '2.4'
+  - '1.7'
+  status: fixed
+  proposed_by: Claude
+  proposed_on: '2026-11-14'
+  fixed_by: ishan sinha
+  fixed_on: '2026-11-17'
+  history: []
+- id: D26
+  title: Thickness thirds
+  value:
+    true: cohort cell mean A over 2016-2024
+    quantiles:
+    - 0.3333333
+    - 0.6666667
+  reason: Thirds are cut once, on each cohort cell's mean thickness over the panel, so a cell keeps its third in
+    every year and the cut does not move with drought years. For display only; models use A as continuous.
+  tasks:
+  - '2.4'
+  - '2.9'
+  status: fixed
+  proposed_by: Claude
+  proposed_on: '2026-11-14'
+  fixed_by: ishan sinha
+  fixed_on: '2026-11-17'
+  history: []
+- id: D27
+  title: Processing-test counties (Stage 2)
+  value:
+    n_counties: 4
+    cells_per_county: 75
+    cohort_per_county: 50
+    rainfed_per_county: 25
+    seed: 20261114
+    min_cohort_cells: 300
+  reason: 'Four counties from thin to thick aquifer: counties with at least 300 cohort cells are split into thickness
+    quartiles (KGS 2019-2021 section thickness), and from each quartile the county most different in normal rainfall
+    and soil from those already chosen is taken. 75 cells per county (50 cohort, 25 rainfed) drawn with the recorded
+    seed.'
+  tasks:
+  - '1.6'
+  status: fixed
+  proposed_by: Claude
+  proposed_on: '2026-11-14'
+  fixed_by: ishan sinha
+  fixed_on: '2026-11-17'
+  history: []
+- id: D28
+  title: Precision simulation
+  value:
+    n_sim: 200
+    dry_variance_factors:
+    - 1.5
+    - 2.0
+    seed: 20261114
+  reason: 200 simulations per scenario give the half-width of the 95% interval to about 5%. The higher-variance
+    drought scenarios multiply the residual variance in dry conditions by 1.5 and 2.
+  tasks:
+  - '2.6'
+  status: fixed
+  proposed_by: Claude
+  proposed_on: '2026-11-14'
+  fixed_by: ishan sinha
+  fixed_on: '2026-11-17'
+  history: []
+- id: D29
+  title: ET value of a cell-month
+  value:
+    variable: et_ensemble_mad
+    models: sensitivity
+    cell_value: mean of valid pixels when D21 holds
+  reason: The OpenET ensemble is the main value; each model's cell mean is kept for the per-model results the pilot
+    plans in Figure 3.
+  tasks:
+  - et_cells
+  - '2.5'
+  - '2.6'
+  status: fixed
+  proposed_by: Claude
+  proposed_on: '2026-11-14'
+  fixed_by: ishan sinha
+  fixed_on: '2026-11-17'
+  history: []

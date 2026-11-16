@@ -190,11 +190,12 @@ for i, c in enumerate(attr_cols, start=1):
                             chunksizes=(512,512), fill_value=FILL_F)
     var[:] = np.where(np.isfinite(grid), grid, FILL_F).astype("float32")
     var.long_name = f"gSSURGO Valu1.{c}"
-    var.units = "cm" if c.startswith(("aws","rootzn")) else \
-                ("g/m2" if c.startswith(("soc","tk")) else "1")
-    var.units_comment = ("units follow SSURGO conventions: AWS/root-zone storage in cm "
-                         "of water; SOC stocks g/m2 (per depth interval prefix); "
-                         "tk thickness cm; index scores unitless. See SSURGO docs.")
+    # gSSURGO Valu1 table: AWS and root-zone AWS in mm of water; root-zone depth and layer thickness in cm
+    var.units = ("mm" if c.startswith("aws") or c == "rootznaws" else
+                 "cm" if c.startswith("tk") or c == "rootznemc" else
+                 "g/m2" if c.startswith("soc") else "1")
+    var.units_comment = ("units follow the gSSURGO Valu1 table: aws* and rootznaws in mm of water; rootznemc "
+                         "(root-zone depth) and tk* (layer thickness) in cm; soc* g C/m2; index scores unitless.")
     var.grid_mapping = "crs"; var.coordinates = "y x"
     vv = grid[np.isfinite(grid)]
     report.append((c, int(vv.size),
@@ -228,7 +229,7 @@ rz_valid = rz[np.isfinite(rz)]
 print(f"verify: missing_vars={missing}")
 print(f"        dims={dict(chk.sizes)}  vars={len(chk.data_vars)}")
 print(f"        rootznaws valid px={rz_valid.size} ({100*rz_valid.size/rz.size:.1f}%), "
-      f"min {rz_valid.min():.1f} med {np.median(rz_valid):.1f} max {rz_valid.max():.1f} cm "
+      f"min {rz_valid.min():.1f} med {np.median(rz_valid):.1f} max {rz_valid.max():.1f} mm "
       f"(4 km product median was 203.5)")
 print(f"        mukey inside-aquifer px={int((chk['mukey'].values != FILL_I).sum())}")
 print(f"        crs: {chk['crs'].grid_mapping_name}, epsg {chk['crs'].epsg_code}")

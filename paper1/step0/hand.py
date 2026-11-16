@@ -174,8 +174,17 @@ def dem_window(top, bottom, left, right, log=None):
 
 
 # ---------------------------------------------------------------- HAND for one HU8
+def numpy_compat_for_pysheds():
+    """pysheds 0.5 calls np.in1d, which NumPy 2.4 removed (Colab has 2.4). in1d(a, b) was isin(ravel(a), b);
+    restore exactly that, and only when it is missing."""
+    if not hasattr(np, "in1d"):
+        np.in1d = lambda ar1, ar2, assume_unique=False, invert=False, **kw: np.isin(
+            np.ravel(ar1), ar2, assume_unique=assume_unique, invert=invert, **kw)
+
+
 def compute_hand(dem, channel, lat_c):
     """dem (H, W) unburned elevations on the 1" lattice, channel bool -> hand, fdir (pysheds)."""
+    numpy_compat_for_pysheds()
     from affine import Affine
     from pysheds.grid import Grid
     from pysheds.sview import Raster, ViewFinder
