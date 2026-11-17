@@ -6,7 +6,9 @@ that on every tile-year before anything is written, so dry cohort ET exists only
 Decisions: D20 (dry), D21 (model coverage), D29 (ET value).
 Deliverable: et_cell_month.parquet (blinded), parts/<tile>_<year>.parquet (resumable units, already gated).
 
-iter_tile_months() is shared with Task 1.4 (coverage): the same files, frames and cell-id rasters.
+tile_jobs(), open_job() and run_jobs() are shared with Task 1.4 (coverage): the same files, frames and cell-id
+rasters. Tile-years are read by worker processes (config.N_WORKERS); dry cohort ET passes from a worker to
+run() in memory only and is dropped by the gate there, so it still never exists on disk.
 """
 import os
 
@@ -25,13 +27,11 @@ def scoped_cells(ctx):
     return cells, CL.scope(cells, sample)
 
 
-def iter_tile_months(ctx, cells, in_scope, years, months):
-    """Yield (tile, year, month, ids, ds, (t, r0, r1, c0, c1)) for every OpenET tile-month holding a cell in scope.
-    ids: cell-id raster of the WINDOW (the bounding box of in-scope cells in the tile), out-of-scope cells -1.
-    ds is open; the caller reads ds[var][t, r0:r1, c0:c1] (read_at)."""
-    import geopandas as gpd
+def tile_jobs(ctx, cells, in_scope, years, months, done=(), **extra):
+    """One job (a dict a worker process can take) per OpenET tile-year that holds a cell in scope and has no part
+    file yet. The cell-id raster of the tile is built here once and read by the workers from its cache file."""
     from .. import config as C
-    from ..common import io, cells as CL
+    from ..common import io, cells as CL, grids
     from ..phase0 import t0_2_cells as T02
     geo = T02.load_geometry(ctx.dep("t0_2"))
     geo = geo.set_index("cell_id").loc[cells.cell_id].reset_index()
@@ -40,30 +40,58 @@ def iter_tile_months(ctx, cells, in_scope, years, months):
     sig = CL.cells_signature(cells)
     cache = f"{C.shared_root()}/cellids"
     keep = np.where(in_scope)[0]
+    jobs = []
     for tile in C.KS_TILES:
         F = frames.get(tile)
         if F is None:
             continue
-        ids = CL.tile_ids(geo, F, cache, sig)
-        m = np.isin(ids, keep)
+        m = np.isin(CL.tile_ids(geo, F, cache, sig), keep)
         if not m.any():
             continue
         rr, cc = np.where(m)
-        r0, r1, c0, c1 = rr.min(), rr.max() + 1, cc.min(), cc.max() + 1
-        ids = np.where(m, ids, -1)[r0:r1, c0:c1]
+        window = (int(rr.min()), int(rr.max()) + 1, int(cc.min()), int(cc.max()) + 1)
         for y in years:
             p = io.openet_file(tile, y)
+            if f"{tile}_{y}.parquet" in done:
+                continue
             if not os.path.exists(p):
                 ctx.log.warning("OpenET %s %d missing: %s", tile, y, p)
                 continue
-            ds = io.open_tile(p)
-            io.tile_frame_of(ds, frames, tile)
-            yy, mm = io.openet_months(ds)
-            for mo in months:
-                k = np.where((yy == y) & (mm == mo))[0]
-                if len(k):
-                    yield tile, y, mo, ids, ds, (int(k[0]), r0, r1, c0, c1)
-            ds.close()
+            jobs.append(dict(tile=tile, year=y, path=p, frame=F, window=window, keep=keep, months=list(months),
+                             ids_path=os.path.join(cache, f"ids_{sig}_{grids.frame_key(F)}.npz"), **extra))
+    return jobs
+
+
+def open_job(job):
+    """In a worker: (ids, ds, [(month, time index)]) of one tile-year. ids is the cell-id raster of the WINDOW
+    (the bounding box of in-scope cells in the tile), out-of-scope cells -1; the caller reads
+    ds[var][t, r0:r1, c0:c1] (read_at) and closes ds."""
+    from ..common import io
+    r0, r1, c0, c1 = job["window"]
+    ids = np.load(job["ids_path"])["ids"][r0:r1, c0:c1]
+    ids = np.where(np.isin(ids, job["keep"]), ids, -1)
+    ds = io.open_tile(job["path"])
+    io.tile_frame_of(ds, {job["tile"]: job["frame"]}, job["tile"])
+    yy, mm = io.openet_months(ds)
+    ts = [(mo, int(k[0])) for mo in job["months"] for k in [np.where((yy == job["year"]) & (mm == mo))[0]] if len(k)]
+    return ids, ds, ts
+
+
+def run_jobs(ctx, worker, jobs):
+    """Yield (key, table) per tile-year. Reading the tiles is the slow step, so config.N_WORKERS processes read
+    them side by side; the caller alone writes (for ET, after the blinding gate)."""
+    from concurrent.futures import ProcessPoolExecutor, as_completed
+    from .. import config as C
+    if C.N_WORKERS <= 1 or len(jobs) <= 1:
+        for j in jobs:
+            yield f"{j['tile']}_{j['year']}", worker(j)
+            ctx.check_budget()
+        return
+    with ProcessPoolExecutor(min(C.N_WORKERS, len(jobs))) as ex:
+        futs = {ex.submit(worker, j): f"{j['tile']}_{j['year']}" for j in jobs}
+        for f in as_completed(futs):
+            yield futs[f], f.result()
+            ctx.check_budget()
 
 
 def read_at(ds, var, at, tries=4):
@@ -99,11 +127,40 @@ def save_part(ctx, df, parts, key):
     deliver(tmp, f"{parts}/{key}.parquet")
 
 
+def et_part(job):
+    """Worker: per cell and month of one tile-year, sums and pixel counts of the ensemble and of each model.
+    Not gated: the rows go back to run() in memory, which gates them before anything is written."""
+    import pandas as pd
+    from .. import config as C
+    from ..common import zonal
+    ids, ds, ts = open_job(job)
+    n = job["n"]
+    present = np.unique(ids[ids >= 0])
+    out = []
+    for mo, k in ts:
+        t = (k, *job["window"])
+        rec = dict(cell=job["cell_id"][present], year=job["year"], month=mo)
+        # sums and counts, not means: a cell that crosses a tile edge is added up from its pieces in STEP E-3
+        ens = read_at(ds, C.ET_ENSEMBLE, t).astype("float64")
+        ens[ens == FILL] = np.nan
+        s, c = zonal.total(ids, ens, n)
+        rec[f"{C.ET_ENSEMBLE}_sum"], rec[f"{C.ET_ENSEMBLE}_n"] = s[present], c[present]
+        for m in C.ET_MODELS:
+            raw = read_at(ds, f"et_{m}", t)
+            v = raw.astype("float64")
+            v[~valid_pixels(ds, m, t, et=raw)] = np.nan
+            s, c = zonal.total(ids, v, n)
+            rec[f"et_{m}_sum"], rec[f"et_{m}_n"] = s[present], c[present]
+        out.append(pd.DataFrame(rec))
+    ds.close()
+    return pd.concat(out, ignore_index=True) if out else None
+
+
 def run(ctx):
     import pandas as pd
     from .. import config as C
     from .. import blinding
-    from ..common import report, zonal
+    from ..common import report
 
     # ══════ STEP E-1  cohort and rainfed cells in scope; dry flags; per-model coverage (Task 1.4) ══════
     cells, scope = scoped_cells(ctx)
@@ -120,42 +177,16 @@ def run(ctx):
 
     # ══════ STEP E-2  per tile-year: cell means of the ensemble and each model, gated before writing ══════
     totals = dict(rows_in=0, rows_kept=0, cohort_dry_dropped=0, other_dropped=0)
-    done = set(os.listdir(parts))
-    buf, cur = [], None
-
-    def flush(key):
-        if not buf:
-            return
-        et = pd.concat(buf, ignore_index=True)
-        out, dropped = blinding.gate(et, cells[["cell_id", "county", "role"]], dry)
+    unblind = C.RUN_MODE == "main"          # after the freeze only: gate() itself refuses without a valid record
+    jobs =tile_jobs(ctx, cells, scope, C.PANEL_YEARS, C.SEASON_MONTHS, done=set(os.listdir(parts)), n=n,
+                     cell_id=cells.cell_id.to_numpy())
+    for key, et in run_jobs(ctx, et_part, jobs):
+        if et is None:
+            continue
+        out, dropped = blinding.gate(et, cells[["cell_id", "county", "role"]], dry, unblind)
         for k in totals:
             totals[k] += dropped[k]
         save_part(ctx, out, parts, key)
-        buf.clear()
-
-    for tile, y, mo, ids, ds, t in iter_tile_months(ctx, cells, scope, C.PANEL_YEARS, C.SEASON_MONTHS):
-        key = f"{tile}_{y}"
-        if f"{key}.parquet" in done:
-            continue
-        if cur is not None and key != cur:
-            flush(cur)
-        cur = key
-        present = np.unique(ids[ids >= 0])
-        rec = dict(cell=cells.cell_id.to_numpy()[present], year=y, month=mo)
-        # sums and counts, not means: a cell that crosses a tile edge is added up from its pieces in STEP E-3
-        ens = read_at(ds, C.ET_ENSEMBLE, t).astype("float64")
-        ens[ens == FILL] = np.nan
-        s, c = zonal.total(ids, ens, n)
-        rec[f"{C.ET_ENSEMBLE}_sum"], rec[f"{C.ET_ENSEMBLE}_n"] = s[present], c[present]
-        for m in C.ET_MODELS:
-            raw = read_at(ds, f"et_{m}", t)
-            v = raw.astype("float64")
-            v[~valid_pixels(ds, m, t, et=raw)] = np.nan
-            s, c = zonal.total(ids, v, n)
-            rec[f"et_{m}_sum"], rec[f"et_{m}_n"] = s[present], c[present]
-        buf.append(pd.DataFrame(rec))
-        ctx.check_budget()
-    flush(cur)
 
     # ══════ STEP E-3  add up tile pieces per cell-month, apply D21 (D29), gate again, one blinded table ══════
     files = sorted(os.listdir(parts))
@@ -175,7 +206,7 @@ def run(ctx):
     allp["et_supported"] = supported
     out, dropped = blinding.write_et(ctx, allp, cells[["cell_id", "county", "role"]], dry, "et_cell_month",
                                      units={"et_*": "mm per month"},
-                                     notes="cell mean of valid pixels where D21 holds (D29)")
+                                     notes="cell mean of valid pixels where D21 holds (D29)", unblind=unblind)
     ok, problems, nchk = blinding.audit(ctx.out)
     if not ok:
         raise blinding.BlindingError("audit failed on this task's outputs: " + "; ".join(problems[:5]))

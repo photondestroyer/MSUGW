@@ -23,6 +23,8 @@ def run(ctx):
     T = C.TARGETS
     prec = pd.DataFrame(s["c2_6"]["precision"])
     base = prec[prec.dry_variance_factor == 1.0] if "dry_variance_factor" in prec else prec
+    if "base_error" in base:                    # main case; the district scenario is in the scenario table below
+        base = base[base.base_error == "cell"]
     tg4 = {r["target"]: r["observed"] for r in s["c2_4"]["targets"]}
     rows = [
         ("1 Precision", "soil-moisture contrast: median 95% half-width (mm)",

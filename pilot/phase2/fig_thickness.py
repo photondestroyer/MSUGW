@@ -8,7 +8,7 @@ plotted before the freeze. So this task reads NO ET value. The design is real (c
 the contrast masks, A of Check 2.4, seasonal deficit of Task 1.1); the outcome is planted_effect(A, D) plus
 noise with the variance components of Check 2.6. Each panel shows the fitted curve of one simulated draw, its
 95% interval (the width the real figure would have) and the planted effect (dashed).
-After the freeze, fit() and the three figures take the real cell-year table in place of the simulated one.
+After the freeze, phase3.main_figs calls draw() with the real peak-month ET in place of the simulated one.
 Decisions: D28 (seed).   Deliverables: ET_by_thickness_Fig3/4/5 (.png, _data.csv), fig_thickness.md.
 """
 import numpy as np
@@ -47,34 +47,23 @@ def predict(f, A, D, ref_A=None):
     return x @ f["beta"], np.sqrt(np.clip(np.einsum("ij,jk,ik->i", x, f["cov"], x), 0, None))
 
 
-def run(ctx):
+def draw(ctx, dz, yv, x, y, mask, note, simulated, planted=None):
+    """Fit the surface to yv on the design dz (A_m, deficit_season_mm, county, year) and write Figs 3-5 with their
+    data tables. x, y: cell coordinates (m) for clustering. planted(A, D): the dashed line (simulation only).
+    Returns the summary dict."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import pandas as pd
     from matplotlib.colors import LinearSegmentedColormap
     from .. import config as C
-    from .. import decisions as DEC
     from ..common import report, stats
-    from ..phase0 import t0_2_cells as T02
-    from . import c2_6_precision as C26
-    # ══════ STEP F-1  the real design and one simulated outcome (no ET value is read) ══════
-    w = report.read(ctx.dep("t1_1"), "weather_county_year")
-    w["county"] = w["county"].astype(str)
-    dz = C26.design(ctx, w)
-    vc = report.read(ctx.dep("c2_6"), "c2_6_variance").iloc[0].to_dict()
-    xy = T02.load(ctx.dep("t0_2"), columns=["cell_id", "x5070", "y5070"]).set_index("cell_id").loc[dz.cell_id]
-    x, y = xy.x5070.to_numpy(), xy.y5070.to_numpy()
-    block = pd.factorize(pd.Series((x // 10000).astype(int).astype(str)) + "_" +
-                         pd.Series((y // 10000).astype(int).astype(str)) + "_" + dz.year.astype(str))[0]
     A, Dm = dz.A_m.to_numpy(), dz.deficit_season_mm.to_numpy()
-    rs = np.random.default_rng(DEC.value("D28")["seed"])
-    ysim = planted_effect(A, Dm) + C26.noise(rs, vc, block, pd.factorize(dz.cell_id)[0])
     # ══════ STEP F-2  fit the response surface ══════
     # one county: the deficit differs only between years, so year effects would absorb it
     fe = [dz.year.to_numpy()] if dz.county.nunique() > 1 else []
     cl, cl_label = stats.cluster_ids(dz.county, x, y, fallback="block")
-    f = fit(A, Dm, ysim, fe, cl)
+    f = fit(A, Dm, yv, fe, cl)
     q = stats.ci95(0.0, 1.0, f["n_clusters"])[1]
     levels = [a for a in A_LEVELS if A.min() <= a <= A.max()]
     if len(levels) < 2:                               # Mieno's levels lie outside this sample: use its own range
@@ -82,14 +71,17 @@ def run(ctx):
     base = levels[0]
     ag = np.linspace(*np.quantile(A, [0.01, 0.99]), 60)
     dg = np.linspace(Dm.min(), Dm.max(), 60)          # inside the observed range: no extrapolation
-    p_mean = float(np.mean(planted_effect(A, Dm)))
+    p_mean = float(np.mean(planted(A, Dm))) if planted else 0.0
+    col = "sim_et_mm" if simulated else "et_mm"
 
     def curve(a, d, ref=None):
         a, d = np.broadcast_arrays(np.asarray(a, float), np.asarray(d, float))
         m, s = predict(f, a, d, ref)
-        p = planted_effect(a, d) - (p_mean if ref is None else planted_effect(ref, d))
-        return pd.DataFrame(dict(A_m=a, deficit_mm=d, ref_A_m=np.nan if ref is None else ref, sim_et_mm=m,
-                                 se_mm=s, lo_mm=m - q * s, hi_mm=m + q * s, planted_mm=p))
+        out = pd.DataFrame({"A_m": a, "deficit_mm": d, "ref_A_m": np.nan if ref is None else ref, col: m,
+                            "se_mm": s, "lo_mm": m - q * s, "hi_mm": m + q * s})
+        if planted:
+            out["planted_mm"] = planted(a, d) - (p_mean if ref is None else planted(ref, d))
+        return out
 
     def panel(values, xlabel, ylabel):                # main axes with the histogram of the x variable on top
         fig, (h, ax) = plt.subplots(2, 1, figsize=(7, 4.8), sharex=True,
@@ -101,46 +93,70 @@ def run(ctx):
         ax.set_ylabel(ylabel)
         return fig, ax
 
-    units = dict(sim_et_mm="mm peak-month ET (simulated)", A_m="m", deficit_mm="mm May-Sep")
-    note = "SIMULATED ET on the real design: solid = fitted, band = 95% interval, dashed = planted effect"
+    units = {col: "mm peak-month ET" + (" (simulated)" if simulated else ""), "A_m": "m",
+             "deficit_mm": "mm May-Sep"}
     # ══════ STEP F-3  Fig. 3: ET against aquifer thickness at the mean deficit ══════
     c3 = curve(ag, Dm.mean())
     fig, ax = panel(A, "Aquifer thickness (m)", "Peak-month ET relative to the sample mean (mm)")
     ax.fill_between(c3.A_m, c3.lo_mm, c3.hi_mm, color="#9ca3af", alpha=0.6, linewidth=0)
-    ax.plot(c3.A_m, c3.sim_et_mm, color="k")
-    ax.plot(c3.A_m, c3.planted_mm, color="k", linestyle="--", linewidth=0.8)
-    report.figure(ctx, fig, "ET_by_thickness_Fig3", units=units, mask=MASK, caption=note)
+    ax.plot(c3.A_m, c3[col], color="k")
+    if planted:
+        ax.plot(c3.A_m, c3.planted_mm, color="k", linestyle="--", linewidth=0.8)
+    report.figure(ctx, fig, "ET_by_thickness_Fig3", units=units, mask=mask, caption=note)
     # ══════ STEP F-4  Fig. 4: ET against seasonal deficit at fixed thickness levels ══════
     c4 = pd.concat([curve(a, dg) for a in levels])
     cmap = LinearSegmentedColormap.from_list("thin_thick", [C.COLORS["thin"], C.COLORS["middle"], C.COLORS["thick"]])
     fig, ax = panel(Dm, "Seasonal water deficit, May-September (mm)", "Peak-month ET relative to the sample mean (mm)")
     for i, a in enumerate(levels):
         g = c4[c4.A_m == a]
-        ax.plot(g.deficit_mm, g.sim_et_mm, color=cmap(i / (len(levels) - 1)), label=f"{a:g} m")
+        ax.plot(g.deficit_mm, g[col], color=cmap(i / (len(levels) - 1)), label=f"{a:g} m")
     ax.legend(title="Aquifer thickness", fontsize=8, frameon=False)
-    report.figure(ctx, fig, "ET_by_thickness_Fig4", units=units, mask=MASK, caption=note)
+    report.figure(ctx, fig, "ET_by_thickness_Fig4", units=units, mask=mask, caption=note)
     # ══════ STEP F-5  Fig. 5: ET difference from the thinnest level, with its 95% interval ══════
     c5 = pd.concat([curve(a, dg, base) for a in levels[1:]])
     fig, axs = plt.subplots(1, len(levels) - 1, figsize=(3.6 * (len(levels) - 1), 3.6), sharey=True, squeeze=False)
     for ax, a in zip(axs[0], levels[1:]):
         g = c5[c5.A_m == a]
         ax.fill_between(g.deficit_mm, g.lo_mm, g.hi_mm, color="#a5b4fc", alpha=0.7, linewidth=0)
-        ax.plot(g.deficit_mm, g.sim_et_mm, color="#dc2626")
-        ax.plot(g.deficit_mm, g.planted_mm, color="k", linestyle="--", linewidth=0.8)
+        ax.plot(g.deficit_mm, g[col], color="#dc2626")
+        if planted:
+            ax.plot(g.deficit_mm, g.planted_mm, color="k", linestyle="--", linewidth=0.8)
         ax.axhline(0, color="k", linewidth=0.8)
         ax.set_title(f"{a:g} m minus {base:g} m", fontsize=9)
         ax.set_xlabel("Seasonal water deficit (mm)")
     axs[0][0].set_ylabel("Difference in peak-month ET (mm)")
     fig.subplots_adjust(bottom=0.32)
-    report.figure(ctx, fig, "ET_by_thickness_Fig5", units=units, mask=MASK, caption=note)
-    # ══════ STEP F-6  tables and note ══════
+    report.figure(ctx, fig, "ET_by_thickness_Fig5", units=units, mask=mask, caption=note)
+    # ══════ STEP F-6  tables ══════
     for name, c in (("Fig3", c3), ("Fig4", c4), ("Fig5", c5)):
-        report.table(ctx, c, f"ET_by_thickness_{name}_data", units=units, mask=MASK, notes=note)
+        report.table(ctx, c, f"ET_by_thickness_{name}_data", units=units, mask=mask, notes=note)
     top = c5[c5.A_m == levels[-1]].iloc[-1]           # thickest level against the thinnest, at the largest deficit
-    summ = dict(rows=int(len(dz)), cells=int(dz.cell_id.nunique()), counties=int(dz.county.nunique()),
+    return dict(rows=int(len(dz)), cells=int(dz.cell_id.nunique()), counties=int(dz.county.nunique()),
                 clusters=int(f["n_clusters"]), cluster_level=cl_label, year_effects=bool(fe), levels_m=levels,
                 A_range_m=[float(A.min()), float(A.max())], deficit_range_mm=[float(Dm.min()), float(Dm.max())],
-                fig5_halfwidth_mm_at_max_deficit=float(q * top.se_mm))
+                fig5_diff_mm_at_max_deficit=float(top[col]), fig5_halfwidth_mm_at_max_deficit=float(q * top.se_mm))
+
+
+def run(ctx):
+    import pandas as pd
+    from .. import decisions as DEC
+    from ..common import report
+    from ..phase0 import t0_2_cells as T02
+    from . import c2_6_precision as C26
+    # ══════ STEP F-1  the real design and one simulated outcome (no ET value is read) ══════
+    w = report.read(ctx.dep("t1_1"), "weather_county_year")
+    w["county"] = w["county"].astype(str)
+    dz = C26.design(ctx, w)
+    vc = report.read(ctx.dep("c2_6"), "c2_6_variance").iloc[0].to_dict()
+    xy = T02.load(ctx.dep("t0_2"), columns=["cell_id", "x5070", "y5070"]).set_index("cell_id").loc[dz.cell_id]
+    x, y = xy.x5070.to_numpy(), xy.y5070.to_numpy()
+    block = pd.factorize(pd.Series((x // 10000).astype(int).astype(str)) + "_" +
+                         pd.Series((y // 10000).astype(int).astype(str)) + "_" + dz.year.astype(str))[0]
+    rs = np.random.default_rng(DEC.value("D28")["seed"])
+    ysim = planted_effect(dz.A_m.to_numpy(), dz.deficit_season_mm.to_numpy()) + \
+        C26.noise(rs, vc, block, pd.factorize(dz.cell_id)[0])
+    note = "SIMULATED ET on the real design: solid = fitted, band = 95% interval, dashed = planted effect"
+    summ = draw(ctx, dz, ysim, x, y, MASK, note, simulated=True, planted=planted_effect)
     report.text(ctx, "fig_thickness.md", "\n".join([
         "# ET by aquifer thickness (ET version of Mieno et al. 2024, Figures 3-5): SIMULATED", "",
         "No ET value was read. The blinding rule forbids viewing cohort ET by aquifer thickness in dry conditions "

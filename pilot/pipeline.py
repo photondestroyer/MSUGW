@@ -109,7 +109,16 @@ STAGES = [
     T("fig_thick", "ET by aquifer thickness, simulated (Mieno Figs 3-5)", "phase2.fig_thickness:run",
       deps=["t0_2", "t1_1", "t1_7", "c2_4", "c2_6"], keys=["COLORS"], decisions=["D28"],
       modules=["phase2/fig_thickness.py", "phase2/c2_6_precision.py", "common/stats.py", "common/report.py"]),
+    # ------------------------------------------------------------------ Main analysis: after the freeze only
+    T("m_models", "Main: models C1, P1, J1, T1 and the two contrasts", "phase3.main_models:run",
+      deps=["t0_2", "t1_1", "t1_7", "c2_4", "c2_8", "et_cells"], decisions=["D28", "D29", "D30", "D31", "D32"],
+      modules=["phase3/main_models.py", "freeze.py", "common/stats.py"] + DEF),
+    T("m_figs", "Main: Figure 1, Figure 3, ET by aquifer thickness (Mieno Figs 3-5)", "phase3.main_figs:run",
+      deps=["m_models", "t0_2", "t1_1", "t1_7", "c2_4", "c2_8", "et_cells"], keys=["COLORS"],
+      decisions=["D29", "D31", "D32"],
+      modules=["phase3/main_figs.py", "phase3/main_models.py", "phase2/fig_thickness.py", "freeze.py"] + DEF),
 ]
+MAIN = ["m_models", "m_figs"]
 
 ALIASES = {"0.1": "t0_1", "0.2": "t0_2", "0.3": "t0_3", "0.4": "t0_4", "1.1": "t1_1", "1.2": "t1_2",
            "1.3": "t1_3", "1.4": "t1_4", "1.5": "t1_5", "1.6": "t1_6", "1.7": "t1_7", "2.1": "c2_1", "2.2": "c2_2",
@@ -120,7 +129,8 @@ GROUPS = {
     "phase2": ["c2_1", "c2_2", "c2_3", "c2_4", "c2_5", "c2_6", "c2_7", "c2_8", "c2_9"],
     "no_et": ["t0_1", "t0_4", "counties", "t0_2", "t1_1", "t1_2", "t1_3", "dry", "t1_5", "sample", "t1_inv", "rep",
               "c2_2", "c2_4", "c2_7", "c2_8"],
-    "all": [s["name"] for s in STAGES if s["name"] != "t0_3"],
+    "all": [s["name"] for s in STAGES if s["name"] != "t0_3" and s["name"] not in MAIN],
+    "main": MAIN,                    # the tasks refuse outside main mode and without a valid freeze record
 }
 
 

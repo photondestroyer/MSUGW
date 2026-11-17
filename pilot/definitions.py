@@ -304,13 +304,21 @@ def well_support(well_km, d=None):
     return np.asarray(well_km, float) <= _d("D25", d)["max_well_km"]
 
 
-def thickness_poor(A, A_se, well_km, d=None):
-    """Poor thickness estimate (D25): SE above D25 max_rel_se of A, or nearest measured well beyond max_well_km,
-    or A not positive / unknown."""
+def thickness_poor(A, A_se, well_km, third, cuts, d=None):
+    """Poor thickness estimate (D25), any of:
+    absolute test        SE of A above D25 max_se_m;
+    third-confidence     a thin cell-year whose interval A + third_z*SE reaches the thick cut, or a thick one whose
+                         A - third_z*SE reaches the thin cut (it could belong to the opposite extreme third);
+                         middle cells are not tested (the models use A as continuous);
+    support              nearest measured well beyond max_well_km; A not positive or unknown.
+    third: the cell's third (assign_third), cuts: the two cut points (thickness_thirds)."""
     d = _d("D25", d)
     a, se, km = (np.asarray(x, float) for x in (A, A_se, well_km))
-    with np.errstate(invalid="ignore", divide="ignore"):
-        return ~np.isfinite(a) | (a <= 0) | (se > d["max_rel_se"] * a) | ~well_support(km, d)
+    th = np.asarray(third, dtype=object)
+    z = d["third_z"]
+    with np.errstate(invalid="ignore"):
+        conflict = ((th == "thin") & (a + z * se > cuts[1])) | ((th == "thick") & (a - z * se < cuts[0]))
+        return ~np.isfinite(a) | (a <= 0) | (se > d["max_se_m"]) | conflict | ~well_support(km, d)
 
 
 # ===================================================================================== Footprints, S (D11-D19)

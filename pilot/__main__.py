@@ -12,6 +12,8 @@
     test [unit|definitions|blinding|e2e|all] [-k word]
     docs                           regenerate docs/pilot/DEFINITIONS.md and docs/pilot/DECISIONS.md
     sync-inputs [--dry-run]        copy the local-only inputs and the code to Google Drive for Colab
+    freeze --by "name" --supervisor "name" [--deviation "reason"]
+                                   all decisions fixed + code committed -> pilot/freeze.json, commit, tag
 
 Mode and environment: PILOT_RUN_MODE (test | smoke | stage2 | stage3), PILOT_RUN_ENV (local | colab).
 """
@@ -152,6 +154,12 @@ def main(argv):
         return cmd_docs()
     if cmd == "sync-inputs":
         return cmd_sync(rest)
+    if cmd == "freeze":
+        from . import freeze
+        rec = freeze.freeze(_arg(rest, "--by"), _arg(rest, "--supervisor"), _arg(rest, "--deviation"))
+        print(f"frozen: {rec['tag']} (decisions {rec['decisions_sha256'][:12]}, code {rec['code_commit'][:10]}); "
+              "the main analysis can now run: PILOT_RUN_MODE=main python -m pilot run main")
+        return 0
     if cmd == "r-env":
         from . import renv_setup
         if "--create" in rest:

@@ -15,7 +15,7 @@ D12 = dict(max_irr_share=0.05, min_label_coverage=0.9)
 D13 = dict(radius_km=100, fallback_km=150, min_footprints=3, min_share_counties=0.8)
 D14 = dict(rain_tol_frac=0.2, rzws_tol_frac=0.3)
 D20 = dict(season_pct=70, s_pct=30, missing_s_is_dry=True)
-D25 = dict(max_rel_se=0.5, max_well_km=8)
+D25 = dict(max_se_m=15, third_z=1.96, max_well_km=8)
 
 
 def _cohort(primary, corn, sw=False, regular=True, check=None):
@@ -131,8 +131,14 @@ def test_thickness():
     assert A == 50 and abs(se - 5.0) < 1e-12
     cuts = DEF.thickness_thirds(np.arange(1, 10), dict(quantiles=[1 / 3, 2 / 3]))
     assert list(DEF.assign_third([1, 5, 9], cuts)) == ["thin", "middle", "thick"]
-    poor = DEF.thickness_poor([50, 50, 50, -1], [10, 30, 10, 1], [2, 2, 9, 2], D25)
-    assert list(poor) == [False, True, True, True]
+    cuts = [30.0, 50.0]
+    # ok thin; SE above 15 m; well too far; A not positive; thin that could be thick (10+1.96*14 > 50);
+    # thick that could be thin (55-1.96*14 < 30); a middle cell with the same wide SE is not third-tested
+    poor = DEF.thickness_poor([10, 60, 60, -1, 25, 55, 40], [5, 16, 5, 1, 14, 14, 14],
+                              [2, 2, 9, 2, 2, 2, 2], ["thin", "thick", "thick", "thin", "thin", "thick", "middle"],
+                              cuts, D25)
+    assert list(poor) == [False, True, True, True, True, True, False]
+    assert not DEF.thickness_poor([10], [9.0], [2], ["thin"], cuts, D25)[0]     # 10 m +- 17.6 stays below 50
 
 
 def test_supported_month_and_footprint():
@@ -191,7 +197,7 @@ def test_registry_complete():
 
 
 THRESHOLD_KEYS = ["min_share", "max_irr_share", "min_cropland_share", "season_pct", "s_pct", "min_valid_share",
-                  "min_models", "max_rel_se", "max_well_km", "min_nested_9km", "min_label_coverage",
+                  "min_models", "max_se_m", "third_z", "max_well_km", "min_nested_9km", "min_label_coverage",
                   "min_supported_footprints", "rzws_tol_mm", "dominant_min_share", "min_agree_years",
                   "min_map_coverage",
                   "rain_tol_frac", "rzws_tol_frac"]

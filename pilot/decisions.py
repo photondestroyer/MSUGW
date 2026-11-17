@@ -75,7 +75,7 @@ def require(ids, task, path=PATH):
     from . import config as C
     from .core.errors import PipelineStop
     proposed = [i for i in ids if status(i, path) != "fixed"]
-    if proposed and C.RUN_MODE in ("stage2", "stage3"):
+    if proposed and C.RUN_MODE in ("stage2", "stage3", "main"):
         raise PipelineStop(f"task {task} uses decisions that are still proposed: {', '.join(proposed)}. "
                            f"Review them (python -m pilot decisions) and fix them "
                            f"(python -m pilot decisions fix {' '.join(proposed)} --by <name>) before real data are read.")

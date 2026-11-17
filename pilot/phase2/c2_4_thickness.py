@@ -93,6 +93,14 @@ def run(ctx):
     pred = pd.concat(pred, ignore_index=True)
     loc_cv = pd.concat(loc_cv, ignore_index=True)
     loc_cv["err"] = loc_cv.pred - loc_cv.obs
+    # D23: calibrate the kriging SE year by year on held-out locations, so that se_coverage of held-out wells lie
+    # within +-z SE (the raw kriging SE covered only 75-82%: the variogram has no information below ~2 km)
+    from scipy.stats import norm
+    cov = d23["se_coverage"]
+    se_scale = (loc_cv.err / loc_cv.se).abs().groupby(loc_cv.year).quantile(cov) / norm.ppf(0.5 + cov / 2)
+    pred["wte_se_m"] = pred.wte_se_m * pred.year.map(se_scale)
+    loc_cv["se_cal"] = loc_cv.se * loc_cv.year.map(se_scale)
+    ctx.log.info("STEP 2.4-2  kriging SE scale by year (D23): %s", se_scale.round(2).to_dict())
 
     # ══════ STEP 2.4-3  hold out whole years: predict year y from the surfaces of y-1 and y+1 ══════
     yr_cv = []
@@ -109,20 +117,23 @@ def run(ctx):
     # ══════ STEP 2.4-4  base (KGS) and its uncertainty from the USGS-KGS spread by GMD (D24); thickness A ══════
     diff = (cells.usgs_bottom_ft - cells.kgs_hpa_bedrock) * FT
     gm = cells.gmd.fillna(0).astype(int)
-    mad = pd.Series(diff.to_numpy()).groupby(gm.to_numpy()).apply(lambda s: 1.4826 * np.nanmedian(np.abs(s - np.nanmedian(s))))
-    overall = 1.4826 * np.nanmedian(np.abs(diff - np.nanmedian(diff)))
+    # 1.4826 x MAD = robust SD of the USGS-KGS difference; only kgs_variance_share of its variance is KGS's (D24)
+    share = np.sqrt(d24["kgs_variance_share"])
+    mad = pd.Series(diff.to_numpy()).groupby(gm.to_numpy()).apply(
+        lambda s: share * 1.4826 * np.nanmedian(np.abs(s - np.nanmedian(s))))
+    overall = share * 1.4826 * np.nanmedian(np.abs(diff - np.nanmedian(diff)))
     cells["base_m"] = cells.kgs_hpa_bedrock * FT
     cells["base_se_m"] = gm.map(mad).fillna(overall).to_numpy()
     t = pred.merge(cells[["cell_id", "county", "role", "base_m", "base_se_m", "land_m"]], on="cell_id")
     t["A_m"], t["A_se_m"] = DEF.thickness(t.wte_m, t.wte_se_m, t.base_m, t.base_se_m)
-    t["A_poor"] = DEF.thickness_poor(t.A_m, t.A_se_m, t.well_km)
 
     # ══════ STEP 2.4-5  thirds, cut once on the cohort's 2016-2024 mean A (D26) ══════
-    panel = t[t.year.isin(C.PANEL_YEARS)]
-    cm = panel[panel.role == "cohort"].groupby("cell_id").A_m.mean()
+    cm = t[t.year.isin(C.PANEL_YEARS) & (t.role == "cohort")].groupby("cell_id").A_m.mean()
     cuts = DEF.thickness_thirds(cm.to_numpy())
     third = pd.Series(DEF.assign_third(cm.to_numpy(), cuts), index=cm.index)
     t["A_third"] = t.cell_id.map(third).fillna("")
+    t["A_poor"] = DEF.thickness_poor(t.A_m, t.A_se_m, t.well_km, t.A_third, cuts)    # D25 needs the thirds
+    panel = t[t.year.isin(C.PANEL_YEARS)]                                             # after A_poor exists
 
     # ══════ STEP 2.4-6  comparison with existing products in shared years ══════
     comp = []
@@ -132,6 +143,8 @@ def run(ctx):
         if not __import__("os").path.exists(p) or y not in models:
             continue
         hv = io.sample_raster(p, cells.x5070, cells.y5070, "EPSG:5070")
+        if y == 2016:   # this grid is in feet despite the README ("meters"): median 3041 vs 926.5 in 2015, ratio 3.28
+            hv = hv * FT
         ours = pred[pred.year == y].set_index("cell_id").reindex(cells.cell_id).wte_m.to_numpy()
         d = ours - hv
         comp.append(dict(product="Haacker et al. water table", year=y, n=int(np.isfinite(d).sum()),
@@ -224,4 +237,5 @@ def run(ctx):
     ctx.complete(dict(years=sorted(int(y) for y in models), cuts_m=cuts, targets=tg.to_dict("records"),
                       rmse_location_m=float(np.sqrt((loc_cv.err ** 2).mean())),
                       rmse_year_m=float(np.sqrt((yr_cv.err ** 2).mean())) if len(yr_cv) else None,
-                      base_se_by_gmd={str(k): float(v) for k, v in mad.items()}))
+                      base_se_by_gmd={str(k): float(v) for k, v in mad.items()},
+                      kriging_se_scale_by_year={str(k): float(v) for k, v in se_scale.items()}))

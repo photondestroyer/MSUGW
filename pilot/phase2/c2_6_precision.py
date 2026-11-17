@@ -8,7 +8,8 @@ Physical idea: before looking at any drought result, ask whether the design coul
 difference from noise. The answer depends on how many independent droughts there are, how much ET varies on its
 own, and how well A is known - all of which are measurable without the outcome.
 Blinding: cohort ET from NON-DRY months only, used only to estimate residual variance; only variances are written.
-Decisions: D28.   Deliverables: c2_6_variance.csv, c2_6_precision.csv, c2_6.md.
+Decisions: D28; the fitted model has the D30 terms (not listed as a task decision, so a proposed D30 does not block
+the check; the terms are in the code below).   Deliverables: c2_6_variance.csv, c2_6_precision.csv, c2_6.md.
 """
 import numpy as np
 
@@ -26,14 +27,16 @@ def _variance_components(r, cell, block_year):
     return dict(sd_total=np.sqrt(v_tot), sd_block_year=np.sqrt(v_block), sd_cell=np.sqrt(v_cell), sd_rest=np.sqrt(v_rest))
 
 
-def reliability(real_w, err, fe):
-    """Share of a regressor's variation after the fixed effects that is real, not measurement error:
-    var(real) / (var(real) + var(error)), both swept of the same fixed effects. The estimated coefficient of a
-    regressor measured with error shrinks by this factor, so a half-width in true units is hw / reliability."""
+def reliability(Xw, U, fe):
+    """Attenuation matrix L of regressors measured with error: OLS on X + U estimates L @ beta, where
+    L = (X'X + U'U)^-1 X'X, both swept of the same fixed effects (Xw already is, U is swept here). A covariance
+    in true units is L^-1 V L^-T. Regressors that share one error (A, A x deficit, A x S) must be corrected
+    together; for one regressor L is the usual reliability var(real) / (var(real) + var(error))."""
     from ..common import stats
-    v_real = float(np.var(real_w))
-    v_err = float(np.var(stats.within(err, fe)))
-    return v_real / (v_real + v_err) if v_real + v_err > 0 else np.nan
+    Xw = np.asarray(Xw, float).reshape(len(Xw), -1)
+    Uw = stats.within(np.asarray(U, float).reshape(len(Xw), -1), fe)
+    sx = Xw.T @ Xw
+    return np.linalg.pinv(sx + Uw.T @ Uw) @ sx
 
 
 def design(ctx, w):
@@ -69,7 +72,7 @@ def run(ctx):
     if C.RUN_MODE in ("test", "smoke"):
         d28["n_sim"] = min(d28["n_sim"], 20)            # code tests only; stage2/stage3 use the decided count
     rs = np.random.default_rng(d28["seed"])
-    cells = T02.load(ctx.dep("t0_2"), columns=["cell_id", "county", "x5070", "y5070", "rzws_mm"])
+    cells = T02.load(ctx.dep("t0_2"), columns=["cell_id", "county", "gmd", "x5070", "y5070", "rzws_mm", "corn_years"])
     xy = cells.set_index("cell_id")[["x5070", "y5070"]]
 
     # ══════ STEP 2.6-1  residual variance from NON-DRY cohort peak months (in memory; variances only leave) ══════
@@ -103,50 +106,66 @@ def run(ctx):
     n_ep = int(dz[dz.dry_season.astype(bool)].drop_duplicates(["county", "year"]).episode_id.nunique())
 
     # ══════ STEP 2.6-3  simulate: y = noise with the measured structure; fit C1 and P1; CI half-width ══════
-    # The fit uses A itself. Thickness error enters as the reliability of the A x X term: the water-table error
-    # is drawn per cell-year, the base error once per cell (the base does not change between years).
+    # The fit uses A itself. Thickness error enters through the attenuation matrix of the three A terms, which
+    # share it: the water-table error is drawn per cell-year, the base error once per cell (the base does not
+    # change between years) or, in the "district" scenario, once per groundwater management district.
     bx = (xy.loc[dz.cell_id, "x5070"].to_numpy() // 10000).astype(int)
     byy = (xy.loc[dz.cell_id, "y5070"].to_numpy() // 10000).astype(int)
     block = pd.factorize(pd.Series(bx.astype(str)) + "_" + pd.Series(byy.astype(str)) + "_" + dz.year.astype(str))[0]
     cellc = pd.factorize(dz.cell_id)[0]
+    gmdc = pd.factorize(cells.set_index("cell_id").gmd.loc[dz.cell_id].astype(str))[0]     # no district = its own group
     cy = (dz.county + "_" + dz.year.astype(str)).to_numpy()
     dry = dz.dry.astype(bool).to_numpy()
     sm = dz.mask_sm.to_numpy()
     cl, cl_label = stats.cluster_ids(dz.county, xy.loc[dz.cell_id, "x5070"].to_numpy(),
                                      xy.loc[dz.cell_id, "y5070"].to_numpy(), fallback="block")
+    # D30 controls in every model: root-zone storage and corn years 2013-2015 (static cell traits) x each drought
+    # term. Measured without error, so they carry zero columns in the attenuation matrix.
+    Z = cells.set_index("cell_id").loc[dz.cell_id, ["rzws_mm", "corn_years"]].to_numpy(float)
     out = []
-    for factor in [1.0] + list(d28["dry_variance_factors"]):
+    scenarios =[(1.0, "cell"), (1.0, "district")] + [(f, "cell") for f in d28["dry_variance_factors"]]
+    for factor, base_error in scenarios:
+        bcode = cellc if base_error == "cell" else gmdc
         for model, var, mask in (("C1", "S", sm), ("P1", "deficit_peak_mm", np.ones(len(dz), bool))):
             hw = []
-            sub = np.where(mask & np.isfinite(dz[var].to_numpy()))[0]
+            sub = np.where(mask & np.isfinite(dz[var].to_numpy()) & np.isfinite(Z).all(axis=1))[0]
             if len(sub) < 50:
-                out.append(dict(model=model, dry_variance_factor=factor, n=len(sub), note="too few rows"))
+                out.append(dict(model=model, dry_variance_factor=factor, base_error=base_error, n=len(sub),
+                                note="too few rows"))
                 continue
             X0 = dz.iloc[sub]
             q = np.nanquantile(X0[var], [0.1, 0.5, 0.9])
             dX = (q[0] - q[1]) if model == "C1" else (q[2] - q[1])
-            A, x = dz.A_m.to_numpy(), dz[var].to_numpy()
-            Xs = np.column_stack([A, A * dz.deficit_season_mm.to_numpy(), A * x])[sub]
+            A = dz.A_m.to_numpy()
+            T = np.column_stack([np.ones(len(dz)), dz.deficit_season_mm.to_numpy(), dz[var].to_numpy()])
+            drought = T[:, 1:]                              # seasonal deficit, S or peak deficit
+            ctrl = (Z[:, :, None] * drought[:, None, :]).reshape(len(dz), -1)
+            Xs = np.column_stack([A[:, None] * T, ctrl])[sub]   # A, A x seas. deficit, A x (S or peak), controls
+            zero = np.zeros((len(dz), ctrl.shape[1]))
             fe = [dz.cell_id.to_numpy()[sub], cy[sub]]
-            real_w = stats.within(Xs[:, 2], fe)
+            Xw = stats.within(Xs, fe)
             lam = []
             for s in range(d28["n_sim"]):
                 e = noise(rs, vc, block, cellc)
                 e = np.where(dry, e * np.sqrt(factor), e)
-                a_err = (rs.normal(size=cellc.max() + 1)[cellc] * dz.base_se_m.to_numpy()
+                a_err = (rs.normal(size=bcode.max() + 1)[bcode] * dz.base_se_m.to_numpy()
                          + rs.normal(size=len(dz)) * dz.wte_se_m.to_numpy())
-                lam.append(reliability(real_w, (a_err * x)[sub], fe))
+                Li = np.linalg.pinv(reliability(Xw, np.column_stack([a_err[:, None] * T, zero])[sub], fe))
                 fit = stats.fe_ols(e[sub], Xs, fe=fe, cluster=cl[sub])
-                hw.append(1.96 * fit["se"][2] * abs((A_thin - A_thick) * dX) / lam[-1])
+                se_true = float(np.sqrt(max((Li @ fit["cov"] @ Li.T)[2, 2], 0.0)))
+                lam.append(fit["se"][2] / se_true if se_true > 0 else np.nan)
+                hw.append(1.96 * se_true * abs((A_thin - A_thick) * dX))
             hw, lam = np.array(hw), np.array(lam)
             out.append(dict(model=model, contrast="soil moisture" if model == "C1" else "peak demand",
-                            dry_variance_factor=factor, n=len(sub), cells=int(X0.cell_id.nunique()),
+                            dry_variance_factor=factor, base_error=base_error, n=len(sub),
+                            cells=int(X0.cell_id.nunique()),
                             counties=int(X0.county.nunique()), cluster_level=cl_label,
                             clusters=int(len(np.unique(cl[sub]))), halfwidth_median_mm=float(np.median(hw)),
                             halfwidth_p10_mm=float(np.percentile(hw, 10)), halfwidth_p90_mm=float(np.percentile(hw, 90)),
                             target_mm=C.TARGETS["ci_halfwidth_mm"], A_thin_m=A_thin, A_thick_m=A_thick, delta_x=float(dX),
                             reliability_median=float(np.median(lam))))
-            ctx.log.info("STEP 2.6-3  %s factor %.1f: median half-width %.1f mm", model, factor, np.median(hw))
+            ctx.log.info("STEP 2.6-3  %s factor %.1f base error per %s: median half-width %.1f mm", model, factor,
+                         base_error, np.median(hw))
             ctx.check_budget()
     pr = pd.DataFrame(out)
     # ══════ STEP 2.6-4  write (variances and half-widths only) ══════
@@ -156,9 +175,11 @@ def run(ctx):
                  mask="cohort cell-years in the contrast masks (design only, no outcome)")
     L = ["# Check 2.6 Precision (simulated)", "", f"Independent dry episodes in the design: {n_ep} "
          f"(minimum {C.TARGETS['min_dry_episodes']}).", "", report.md(pr), "",
-         "Half-widths are 1.96 x SE of the interaction times |A_thin - A_thick| x (evaluation point - median), "
-         "divided by the reliability of the interaction (its real share of variation after the fixed effects; "
-         "thickness error: water table per cell-year, base once per cell); p10-p90 across simulations show how "
-         "uncertain the projection is."]
+         "Half-widths are 1.96 x SE of the interaction times |A_thin - A_thick| x (evaluation point - median). "
+         "The SE is corrected for thickness error jointly over the three thickness terms, which share that "
+         "error (covariance L^-1 V L^-T, L the attenuation matrix after the fixed effects); reliability_median "
+         "is the uncorrected SE divided by the corrected one. Thickness error: water table per cell-year; base "
+         "once per cell (base_error = cell, the main case) or once per groundwater management district "
+         "(base_error = district). p10-p90 across simulations show how uncertain the projection is."]
     report.text(ctx, "c2_6.md", "\n".join(L))
     ctx.complete(dict(dry_episodes=n_ep, variance=vc, precision=pr.to_dict("records")))

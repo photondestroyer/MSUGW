@@ -17,6 +17,7 @@ import subprocess
 
 R_ENV_PREFIX = "H:/MSU_GWB/r_env_mieno"
 N_BOOT = 1000          # their value; lower it only with a recorded reason
+BU_ACRE_PER_T_HA = 200 / 12.553   # their model works in t/ha (Codes/0_6_merge_datasets.R: yield * 12.553 / 200)
 PUBLISHED = [          # statements of the paper compared against the reproduction
     dict(item="corn: yield loss when the aquifer thins from ~70 m to ~40 m (230 to 130 ft) at a 950 mm deficit",
          value="about 15 bu/acre", sat_from=70, sat_to=40, balance_mm=950, expected_bu=15.0),
@@ -31,6 +32,16 @@ def rscript():
         if os.path.exists(p):
             return p
     return None
+
+
+def r_env():
+    """Process environment for Rscript: the env's own DLL folders first on PATH (an unactivated conda env cannot
+    find them: Windows exit -1073741515), and no user R library, profile or environ file."""
+    p = R_ENV_PREFIX.replace("/", os.sep)
+    dirs = [p] + [os.path.join(p, *d.split("/")) for d in
+                  ("Library/mingw-w64/bin", "Library/usr/bin", "Library/bin", "Scripts", "bin", "Lib/R/bin/x64")]
+    return dict(os.environ, PATH=os.pathsep.join(dirs + [os.environ.get("PATH", "")]),
+                R_LIBS_USER="", R_PROFILE_USER="", R_ENVIRON_USER="")
 
 
 def run(ctx):
@@ -65,7 +76,7 @@ def run(ctx):
     os.makedirs(out, exist_ok=True)
     log_path = os.path.join(ctx.scratch, "mieno_R.log")
     runner = os.path.join(os.path.dirname(os.path.abspath(__file__)), "run_mieno.R")
-    env = dict(os.environ, R_LIBS_USER="", R_PROFILE_USER="", R_ENVIRON_USER="")
+    env = r_env()
     with open(log_path, "w", encoding="utf-8") as lg:
         p = subprocess.run([rs, "--vanilla", runner, work, str(N_BOOT), out], stdout=lg, stderr=subprocess.STDOUT,
                            env=env, timeout=36 * 3600)
@@ -90,11 +101,14 @@ def run(ctx):
         y0, s0 = y(s["sat_from"])
         y1, s1 = y(s["sat_to"])
         rows.append(dict(statement=s["item"], published=s["value"], balance_used_mm=float(bal), sat_from_m=s0,
-                         sat_to_m=s1, reproduced_loss_bu_acre=round(y0 - y1, 2), expected_bu_acre=s["expected_bu"]))
+                         sat_to_m=s1, reproduced_loss_t_ha=round(y0 - y1, 3),
+                         reproduced_loss_bu_acre=round((y0 - y1) * BU_ACRE_PER_T_HA, 1),
+                         expected_bu_acre=s["expected_bu"]))
     comp = pd.DataFrame(rows)
     report.table(ctx, counts, "mieno_sample_counts")
-    report.table(ctx, comp, "mieno_comparison", units={"loss": "bu/acre", "balance": "mm", "sat": "m"})
-    report.table(ctx, avg, "mieno_avg_yield_sum", units={"avg_yield": "bu/acre", "balance": "mm", "sat": "m"})
+    report.table(ctx, comp, "mieno_comparison", units={"reproduced_loss_t_ha": "t/ha", "reproduced_loss_bu_acre":
+                                                       "bu/acre", "balance": "mm", "sat": "m"})
+    report.table(ctx, avg, "mieno_avg_yield_sum", units={"avg_yield": "t/ha", "balance": "mm", "sat": "m"})
     figs = []
     fdir = os.path.join(work, "Results", "Figures")
     if os.path.isdir(fdir):

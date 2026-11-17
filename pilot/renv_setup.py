@@ -32,7 +32,8 @@ def cran_step():
     rs = rscript()
     lib = f"{R_ENV_PREFIX}/Lib/R/library"
     expr = (f"install.packages(c({', '.join(repr(p) for p in CRAN_ONLY)}), lib='{lib}', "
-            f"repos='https://cloud.r-project.org', type='source')")
+            f"repos='https://cloud.r-project.org', type='binary')")   # CRAN's Windows build: its dependency fracture
+    #                                                         needs a C++ compiler the env does not have
     return [rs or f"{R_ENV_PREFIX}/Scripts/Rscript.exe", "--vanilla", "-e", expr]
 
 
@@ -48,6 +49,7 @@ def run(dry_run=True):
     if dry_run:
         print("then, from CRAN into the environment's own library:\n  " + " ".join(step2))
         return 0
-    q = subprocess.run(step2, capture_output=True, text=True)
+    from .phase0.t0_3_benchmark import r_env
+    q = subprocess.run(step2, capture_output=True, text=True, env=r_env())
     print(q.stdout[-4000:], q.stderr[-4000:])
     return q.returncode

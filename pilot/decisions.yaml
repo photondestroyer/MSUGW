@@ -202,7 +202,7 @@
   history: []
 - id: D12
   title: Footprint irrigation
-  value:
+  value: &id001
     map: AIM-HPA
     years:
     - 2011
@@ -218,7 +218,16 @@
   proposed_on: '2026-11-14'
   fixed_by: ishan sinha
   fixed_on: '2026-11-17'
-  history: []
+  history:
+  - value: *id001
+    fixed_by: ishan sinha
+    fixed_on: '2026-11-17'
+    replaced_on: '2026-11-17'
+    replaced_by: ishan sinha
+    reason_for_change: 'Value unchanged; reason added. AIM-HPA stays the map for reference footprints although LANID
+      is the primary map for cells (D06): the LANID 1997-2020 file holds labels only inside the aquifer polygon,
+      and reference footprints lie mostly outside it, so LANID would leave them unlabelled. The footprints are checked
+      against the LANID 2018-2020 CONUS maps (Task 1.2).'
 - id: D13
   title: Footprint radius and its one widening
   value:
@@ -412,9 +421,12 @@
     neighbours: 32
     max_km: 40
     per: year
+    se_coverage: 0.95
   reason: Water-table elevation follows land surface closely in the High Plains; regression on land-surface elevation
-    removes that trend and the residual is kriged (exponential variogram fitted each year), giving a kriging variance
-    for every cell. Local neighbourhoods of 32 wells within 40 km keep it fast and local.
+    removes that trend and the residual is kriged (exponential variogram fitted each year on lags up to 60 km),
+    32 wells within 40 km. The kriging SE is calibrated each year on wells held out by location so that 95% of them
+    lie within +-1.96 SE (the raw SE covered 75-82%). The fitted range sits on its 500 km bound; lifting the bound
+    changes held-out errors by under 0.2 m, so it is kept.
   tasks:
   - '2.4'
   status: fixed
@@ -422,14 +434,33 @@
   proposed_on: '2026-11-14'
   fixed_by: ishan sinha
   fixed_on: '2026-11-17'
-  history: []
+  history:
+  - value:
+      method: regression kriging
+      drift: land-surface elevation
+      variogram: exponential
+      neighbours: 32
+      max_km: 40
+      per: year
+    fixed_by: ishan sinha
+    fixed_on: '2026-11-17'
+    replaced_on: '2026-11-17'
+    replaced_by: ishan sinha
+    reason_for_change: 'Kriging SE calibrated each year on location-held-out wells so that 95% of them lie within
+      +-1.96 SE. The raw kriging SE (median 2.6-3.9 m) covered only 75-82% of held-out errors (RMSE 7-8 m): the
+      variogram is fitted on lags of 2-60 km and has no information on very short-range variation. Found in the
+      Stage 3 thickness check (no ET seen). The variogram range sits on its 500 km fitting bound every year; refitting
+      without the bound changed held-out RMSE and SE by under 0.2 m (2011, 2020), so the bound is kept.'
 - id: D24
   title: Aquifer base and its uncertainty
   value:
     base: KGS section hpa_bedrock
-    se: 1.4826 x MAD of (USGS bottom - KGS base) by GMD
-  reason: The KGS base is built from 37,026 Kansas bedrock picks and is the most local surface. Its error is taken
-    from the spread against the independent USGS 1998 surface (typical difference about 24 ft), by GMD.
+    se: 1.4826 x MAD of (USGS bottom - KGS base) by GMD, times sqrt(kgs_variance_share)
+    kgs_variance_share: 0.5
+  reason: The KGS base is built from 37,026 Kansas bedrock picks and is the most local surface. Its error comes
+    from the robust spread (1.4826 x MAD, the SD of normally distributed data) of its difference with the independent
+    USGS 1998 surface, by GMD. That spread holds both surfaces' errors, so half of its variance is assigned to KGS
+    (SE / sqrt 2).
   tasks:
   - '2.4'
   status: fixed
@@ -437,14 +468,28 @@
   proposed_on: '2026-11-14'
   fixed_by: ishan sinha
   fixed_on: '2026-11-17'
-  history: []
+  history:
+  - value:
+      base: KGS section hpa_bedrock
+      se: 1.4826 x MAD of (USGS bottom - KGS base) by GMD
+    fixed_by: ishan sinha
+    fixed_on: '2026-11-17'
+    replaced_on: '2026-11-17'
+    replaced_by: ishan sinha
+    reason_for_change: The USGS-KGS difference holds the errors of both surfaces (Var = Var_KGS + Var_USGS); charging
+      all of it to KGS overstated the base error. With no independent measure of either, the variance is split equally
+      (KGS SE = robust SD / sqrt 2). Thickness only; no ET seen.
 - id: D25
   title: Poor thickness estimate
   value:
-    max_rel_se: 0.5
+    max_se_m: 15
+    third_z: 1.96
     max_well_km: 8
-  reason: A cell-year is excluded ("poor thickness") when the standard error of A exceeds half of A or the nearest
-    measured well of that pre-season is farther than 8 km (the pilot's support distance).
+  reason: 'A cell-year is excluded ("poor thickness") when (1) the SE of A exceeds 15 m (a 95% interval wider than
+    +-29 m, wider than the whole thin third); or (2) it is in the thin third and A + 1.96 SE reaches the thick cut,
+    or in the thick third and A - 1.96 SE reaches the thin cut (it could belong to the opposite extreme); or (3)
+    the nearest measured well of that pre-season is farther than 8 km; or A is not positive. Middle-third cells
+    are not tested by (2): the models use A as continuous.'
   tasks:
   - '2.4'
   - '1.7'
@@ -453,7 +498,20 @@
   proposed_on: '2026-11-14'
   fixed_by: ishan sinha
   fixed_on: '2026-11-17'
-  history: []
+  history:
+  - value:
+      max_rel_se: 0.5
+      max_well_km: 8
+    fixed_by: ishan sinha
+    fixed_on: '2026-11-17'
+    replaced_on: '2026-11-17'
+    replaced_by: ishan sinha
+    reason_for_change: 'The relative rule (SE > 0.5 A) excluded every cell-year under 15 m and 49% of the thin third,
+      because the base error is roughly constant in metres; it selected on A itself. Replaced by two rules: an absolute
+      test (SE above 15 m: a 95% interval wider than +-29 m, wider than the whole thin third) and a third-confidence
+      test (a thin cell-year whose 95% interval reaches the thick cut, or a thick one reaching the thin cut). Middle
+      cells are not third-tested: testing them would drop about 91% of them, and the models use A as continuous.
+      Well-distance (8 km) and A <= 0 rules unchanged. Thickness only; no ET seen.'
 - id: D26
   title: Thickness thirds
   value:
@@ -529,3 +587,113 @@
   fixed_by: ishan sinha
   fixed_on: '2026-11-17'
   history: []
+- id: D30
+  title: Model formulas (main analysis)
+  value:
+    unit: cohort cell-year, peak month of its county-year (Task 1.1)
+    outcome: peak-month ET in mm, et_ensemble_mad (D29); each OpenET model refitted as sensitivity
+    fixed_effects:
+    - cell
+    - county x year
+    every_model:
+    - A
+    - A x seasonal deficit
+    - root-zone storage x each drought term
+    - corn years 2013-2015 (2 or 3) x each drought term
+    C1: 'every_model + A x S (peak month); sample: soil-moisture mask (Task 1.7)'
+    P1: 'every_model + A x peak-month deficit; sample: peak-demand mask'
+    J1: 'every_model + A x S + A x peak-month deficit; sample: common mask'
+    T1: 'monthly ET May-Sep; cell x month and county x month x year effects; A x monthly exposure, A x peak-month
+      indicator (required), A x monthly exposure x peak-month indicator; sample: timing mask'
+    T1_monthly_exposure: monthly deficit (reference ET - precipitation)
+    A: continuous, cell-year value of Check 2.4; cell-years flagged poor (D25) left out
+    A_error: attenuation correction of all A terms with the D23 (per cell-year) and D24 (per cell) errors, as in
+      Check 2.6; the uncorrected estimate reported beside it
+    estimator: OLS with the fixed effects absorbed (within transformation)
+  reason: 'Pilot Section 8, term by term: every model holds peak-month ET, cell and county-by-year effects, A as
+    a continuous variable, A x seasonal deficit and root-zone storage and crop-history interactions (crop history
+    = corn years in 2013-2015, 2 or 3: every cohort cell is crop class corn, so the class itself would be constant)
+    with the drought terms; C1 adds A x S, P1 adds A x peak-month deficit, J1 both; T1 as written there. Choices
+    added where Section 8 leaves them open: the outcome series (D29), T1''s ''monthly exposure'' read as the monthly
+    deficit, the attenuation correction used in Check 2.6, and leaving poor-thickness cell-years out.'
+  tasks:
+  - main
+  status: fixed
+  proposed_by: Claude
+  proposed_on: '2026-11-17'
+  fixed_by: ishan sinha
+  fixed_on: '2026-11-17'
+  history: &id002 []
+- id: D31
+  title: Contrasts and how they are read
+  value:
+    soil_moisture_contrast: (thin - thick) peak-month ET at S = 10th percentile minus the same at median S, from
+      C1
+    peak_demand_contrast: (thin - thick) at peak-month deficit = 90th percentile minus the same at its median, from
+      P1
+    percentiles_over: the model's own sample
+    thin_thick_A: mean cell A of the thin and thick thirds (D26) in that sample
+    support: evaluation points inside the range observed in both thirds (Check 2.9); both contrasts also on the
+      common sample (J1); peak-demand also on its full sample
+    interval: 95%, SE clustered by county (10 km blocks if fewer than 10 counties); t with G-1 df below 50 clusters
+    expected_sign: negative (thin cells lose more peak-month ET as conditions dry)
+    evidence: a contrast whose 95% interval excludes zero; both contrasts reported whatever their result
+    per_model: each of the six OpenET models reported; their range is not a confidence interval
+    sensitivity:
+    - base error per district (Check 2.6 scenario)
+    - uncorrected for thickness error
+    - J1 against C1 and P1
+  reason: 'Pilot Section 8 defines the two contrasts (10th percentile of S and 90th of the peak-month deficit, each
+    against the median), the support rule and the common-sample comparison; Figure 3 asks for 95% intervals for
+    each ET model. Added: clustering as in Checks 2.5-2.6, the expected sign written down before the result, and
+    what counts as evidence, so neither can be chosen after seeing the result.'
+  tasks:
+  - main
+  status: fixed
+  proposed_by: Claude
+  proposed_on: '2026-11-17'
+  fixed_by: ishan sinha
+  fixed_on: '2026-11-17'
+  history: *id002
+- id: D32
+  title: Estimand and scope of the main analysis
+  value:
+    cells: all cohort cells in every panel year, whatever their irrigation status after the 2011-2015 labels (intent
+      to treat)
+    secondary: the same models on cell-years known to be irrigated (LANID to 2020, Check 2.8 links to 2023)
+    outcome_scope: ET only; surface temperature is left to a later addendum with its own decisions, fixed before
+      any surface temperature is extracted
+  reason: Thin-aquifer cells are the most likely to stop irrigating, so keeping only cells still irrigated would
+    condition on an outcome of thickness and bias the contrast; status after 2020 is also unknown for about 45%
+    of cohort cells (2021-2023) and all of 2024. Surface temperature was never extracted in the pilot, so it stays
+    blind and can be planned separately (choices by the user, 2026-11-17).
+  tasks:
+  - main
+  status: fixed
+  proposed_by: 'Claude (choices: ishan sinha)'
+  proposed_on: '2026-11-17'
+  fixed_by: ishan sinha
+  fixed_on: '2026-11-17'
+  history: &id003 []
+- id: D33
+  title: Replication regions
+  value:
+    regions:
+    - texas_high_plains
+    - sw_nebraska
+    rule: the frozen workflow, unchanged, applied once to each region; each reported on its own, never pooled with
+      Kansas or with each other
+    cohort_years: the same label years as Kansas (2011-2015) and panel 2016-2024
+    note: SW Nebraska is low-power (13 counties, 35 dry county-years, 6 with clean footprints); its precision is
+      projected with Check 2.6 before its result is read
+  reason: 'Both candidate regions from the metadata screen (rep_screen) are kept, at the user''s choice: Texas High
+    Plains (49 counties, 132 dry county-years, thickness 3-65 m) tests a thin aquifer like western Kansas; SW Nebraska
+    (13 counties, thickness 16-147 m) tests a thick one. Fixed before any result is seen.'
+  tasks:
+  - main
+  status: fixed
+  proposed_by: 'Claude (choices: ishan sinha)'
+  proposed_on: '2026-11-17'
+  fixed_by: ishan sinha
+  fixed_on: '2026-11-17'
+  history: *id003

@@ -79,3 +79,76 @@ def test_dry_table():
     out, thr = blinding.dry_table(w, s, dict(season_pct=70, s_pct=30, missing_s_is_dry=True))
     assert out.loc[(out.year == 2024)].dry_season.all()                 # high deficit -> dry season
     assert out.loc[(out.year == 2016) & (out.month == 7)].dry.all()     # missing S -> dry month
+
+
+# ------------------------------------------------------------------------------------------- the freeze
+def _decision_log_copy(make_fixed):
+    """A temporary copy of the decision log, every entry fixed (or the first fixed one made proposed)."""
+    from pilot import decisions as D
+    d = tempfile.mkdtemp()
+    p = os.path.join(d, "decisions.yaml")
+    with open(D.PATH, encoding="utf-8") as f:
+        txt = f.read()
+    txt = txt.replace("status: proposed", "status: fixed") if make_fixed else txt.replace("status: fixed",
+                                                                                          "status: proposed", 1)
+    with open(p, "w", encoding="utf-8") as f:
+        f.write(txt)
+    return d, p
+
+
+def _stops(fn, *a, **k):
+    from pilot.core.errors import PipelineStop
+    try:
+        fn(*a, **k)
+    except PipelineStop:
+        return True
+    return False
+
+
+def test_freeze_record_needs_fixed_decisions_and_detects_changes():
+    import json
+    from pilot import freeze
+    d, p = _decision_log_copy(make_fixed=False)
+    try:
+        assert _stops(freeze.make_record, "me", "sup", "abc", decisions_path=p)      # a decision still proposed
+    finally:
+        shutil.rmtree(d)
+    d, p = _decision_log_copy(make_fixed=True)
+    try:
+        rec = freeze.make_record("me", "sup", "abc", decisions_path=p, today="2026-12-01")
+        assert rec["tag"] == "pilot-freeze-2026-12-01" and rec["history"] == []
+        fp = os.path.join(d, "freeze.json")
+        with open(fp, "w") as f:
+            json.dump(rec, f)
+        assert freeze.check(fp, p)["tag"] == rec["tag"]
+        assert _stops(freeze.make_record, "me", "sup", "abd", previous=rec, decisions_path=p)   # no deviation
+        dev = freeze.make_record("me", "sup", "abd", previous=rec, deviation="why", decisions_path=p,
+                                 today="2026-12-02")
+        assert dev["tag"].endswith("-dev1") and dev["history"][0]["tag"] == rec["tag"]
+        with open(p, "a", encoding="utf-8") as f:                                    # log edited after the freeze
+            f.write("\n# edited\n")
+        assert _stops(freeze.check, fp, p)
+        assert _stops(freeze.check, os.path.join(d, "missing.json"), p)
+    finally:
+        shutil.rmtree(d)
+
+
+def test_gate_unblinds_only_in_main_mode_after_a_freeze():
+    from pilot import blinding, config as C, freeze
+    cells, dry, et = _fixture()
+    mode, chk = C.RUN_MODE, freeze.check
+    try:
+        try:
+            blinding.gate(et, cells, dry, unblind=True)                              # not main mode
+            assert False, "unblinded outside main mode"
+        except blinding.BlindingError:
+            pass
+        C.RUN_MODE = "main"
+        freeze.check = lambda *a, **k: (_ for _ in ()).throw(blinding.PipelineStop("no freeze"))
+        assert _stops(blinding.gate, et, cells, dry, unblind=True)                   # main mode, no record
+        freeze.check = lambda *a, **k: dict(tag="pilot-freeze-x")
+        out, dropped = blinding.gate(et, cells, dry, unblind=True)
+        assert set(zip(out.cell, out.month)) == {("c1", 7), ("c1", 8), ("c2", 7), ("c2", 8)}
+        assert dropped["cohort_dry_dropped"] == 0 and out.blinding_gate.str.startswith(blinding.AFTER_FREEZE).all()
+    finally:
+        C.RUN_MODE, freeze.check = mode, chk

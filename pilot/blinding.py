@@ -24,6 +24,7 @@ from . import definitions as DEF
 from .core.errors import PipelineStop
 
 GATE_VERSION = "blinding-gate-1"
+AFTER_FREEZE = "after-freeze"          # gate tag of main-mode ET (dry cohort rows kept), followed by the freeze tag
 ET_PREFIX = ("et_", "ET_")
 THICKNESS_COLUMNS = {"A_m", "A_se_m", "A_third", "A_poor", "wte_m", "base_m", "thickness", "satthick"}
 # ... and any column whose NAME says thickness, water table or aquifer base, whatever table it came from
@@ -61,9 +62,17 @@ def dry_table(weather_cy, s_cm, d20=None):
 
 
 # ------------------------------------------------------------------------------------------- STEP B-2 the gate
-def gate(et, cells, dry):
+def gate(et, cells, dry, unblind=False):
     """et: cell, year, month, et_* columns (any). cells: cell_id, county, role. dry: county, year, month, dry.
-    Returns the rows that may be written, with role and dry attached, and a count of what was dropped."""
+    Returns the rows that may be written, with role and dry attached, and a count of what was dropped.
+    unblind=True (main mode only, after the freeze): cohort rows of dry months are kept too; refused without a
+    valid freeze record (freeze.check) or outside main mode."""
+    gate_tag = GATE_VERSION
+    if unblind:
+        from . import freeze
+        if C.RUN_MODE != "main":
+            raise BlindingError(f"unblinded ET is written only in main mode, not {C.RUN_MODE}")
+        gate_tag = f"{AFTER_FREEZE}:{freeze.check()['tag']}"
     bad = thickness_columns(et.columns)
     if bad:
         raise BlindingError(f"an ET table must not carry thickness columns: {bad}")
@@ -75,21 +84,22 @@ def gate(et, cells, dry):
         raise BlindingError("ET rows for cells that are not in the cell table")
     x = x.merge(dry[["county", "year", "month", "dry"]], on=["county", "year", "month"], how="left")
     x["dry"] = x["dry"].astype("boolean").fillna(True).astype(bool)     # unknown -> treated as dry
-    keep = (x["role"] == "rainfed") | ((x["role"] == "cohort") & ~x["dry"])
+    keep = (x["role"] == "rainfed") | ((x["role"] == "cohort") & (~x["dry"] | unblind))
     dropped = dict(rows_in=int(len(x)), rows_kept=int(keep.sum()),
-                   cohort_dry_dropped=int(((x["role"] == "cohort") & x["dry"]).sum()),
+                   cohort_dry_dropped=int(((x["role"] == "cohort") & x["dry"] & ~unblind).sum()),
                    other_dropped=int((~x["role"].isin(["rainfed", "cohort"])).sum()))
     out = x[keep].copy()
-    out["blinding_gate"] = GATE_VERSION
+    out["blinding_gate"] = gate_tag
     return out.reset_index(drop=True), dropped
 
 
-def write_et(ctx, et, cells, dry, name, units=None, notes=""):
+def write_et(ctx, et, cells, dry, name, units=None, notes="", unblind=False):
     """The one function that writes ET values. Gate first, write second; the gate result goes in the sidecar."""
     from .common import report
-    out, dropped = gate(et, cells, dry)
+    out, dropped = gate(et, cells, dry, unblind)
     report.table(ctx, out, name, units=units or {"et_*": "mm per month"}, parquet=True, csv=False,
-                 mask="blinded: rainfed all months; cohort non-dry months only",
+                 mask="after the freeze: rainfed and cohort, all months" if unblind else
+                 "blinded: rainfed all months; cohort non-dry months only",
                  notes=f"{notes} gate={json.dumps(dropped)}")
     return out, dropped
 
@@ -133,7 +143,19 @@ def audit(root=None):
                 problems.append(f"{p}: ET table without role/dry columns (did not pass the gate)")
                 continue
             leak = (df["role"] == "cohort") & df["dry"].astype(bool)
-            if leak.any():
+            after = "blinding_gate" in df.columns and df["blinding_gate"].astype(str).str.startswith(AFTER_FREEZE).all()
+            if after and leak.any():                    # dry cohort rows allowed only after a valid freeze, main mode
+                from . import freeze
+                try:
+                    freeze.check()
+                    main_root = os.path.normcase(os.path.normpath(C.out_root()))
+                    ok = C.RUN_MODE == "main" and os.path.normcase(os.path.normpath(p)).startswith(main_root)
+                except PipelineStop as e:
+                    ok = False
+                    problems.append(f"{p}: after-freeze ET but {e}")
+                if not ok:
+                    problems.append(f"{p}: {int(leak.sum())} cohort rows in dry conditions outside the main root")
+            elif leak.any():
                 problems.append(f"{p}: {int(leak.sum())} cohort rows in dry conditions")
             if (~df["role"].isin(["cohort", "rainfed"])).any():
                 problems.append(f"{p}: ET rows for cells that are neither cohort nor rainfed")

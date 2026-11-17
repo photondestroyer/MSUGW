@@ -21,7 +21,9 @@ import tempfile
 # ============================================================== where and how
 RUN_ENV = os.environ.get("PILOT_RUN_ENV", "local")       # "local" | "colab"
 RUN_MODE = os.environ.get("PILOT_RUN_MODE", "test")      # "test" | "smoke" | "stage2" | "stage3"
-REAL_MODES = ("smoke", "stage2", "stage3")               # modes that read real data
+REAL_MODES = ("smoke", "stage2", "stage3", "main")       # modes that read real data
+# "main" -> every eligible Kansas cell, AFTER the freeze (pilot/freeze.json): the frozen workflow with dry cohort ET
+#           released by the blinding gate; outputs go to <out>/_main, apart from the blinded pilot outputs
 
 PKG_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(PKG_DIR).replace("\\", "/")  # H:/MSU_GWB/datasets locally
@@ -31,6 +33,9 @@ LOCAL_DRIVE = os.environ.get("PILOT_LOCAL_DRIVE", "G:/My Drive/MSUGWB")   # Goog
 LOCAL_DRIVE_TOP = os.path.dirname(LOCAL_DRIVE)                            # G:/My Drive
 LOCAL_OUT = os.environ.get("PILOT_LOCAL_OUT", "H:/MSU_GWB/pilot_out")
 LOCAL_SCRATCH = os.environ.get("PILOT_LOCAL_SCRATCH", "H:/MSU_GWB/pilot_scratch")
+# Processes that read OpenET tile-years side by side (Tasks 1.4 and et_cells). 1 = one process (the default).
+# More workers need about 0.5 GB of memory each on a whole-tile window (Stage 3).
+N_WORKERS = int(os.environ.get("PILOT_WORKERS", "1"))
 MERGED = f"{REPO_ROOT}/merged_datasets"
 PILOT_TEST = f"{REPO_ROOT}/pilot test"
 DOWNLOADED = f"{PILOT_TEST}/downloaded_2026-11-13"
@@ -199,7 +204,7 @@ def check():
     if RUN_ENV not in ("local", "colab"):
         raise ValueError(f"RUN_ENV must be 'local' or 'colab', not {RUN_ENV!r}")
     if RUN_MODE not in ("test",) + REAL_MODES:
-        raise ValueError(f"RUN_MODE must be one of test, smoke, stage2, stage3, not {RUN_MODE!r}")
+        raise ValueError(f"RUN_MODE must be one of test, smoke, stage2, stage3, main, not {RUN_MODE!r}")
 
 
 def real_data():
@@ -247,7 +252,7 @@ def out_root():
     if RUN_MODE == "test":
         return f"{SYNTH_ROOT}/out"
     base = LOCAL_OUT if RUN_ENV == "local" else COLAB_OUT
-    return f"{base}/_{RUN_MODE}" if RUN_MODE in ("smoke", "stage2") else base
+    return f"{base}/_{RUN_MODE}" if RUN_MODE in ("smoke", "stage2", "main") else base
 
 
 def shared_root():

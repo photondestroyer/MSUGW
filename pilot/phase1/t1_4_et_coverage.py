@@ -14,47 +14,49 @@ import os
 import numpy as np
 
 
+def coverage_part(job):
+    """Worker: per cell, month and model of one tile-year, the share of the cell's pixels valid with count > 0."""
+    import pandas as pd
+    from .. import config as C
+    from ..common import zonal
+    from .et_cells import open_job, valid_pixels, read_at, FILL
+    ids, ds, ts = open_job(job)
+    n = job["n"]
+    present = np.unique(ids[ids >= 0])
+    npx = zonal.count(ids, n)[present]
+    expected = (job["area_ha"][present] * 1e4 / C.PIXEL_M ** 2).round().astype(int)
+    out = []
+    for mo, k in ts:
+        t = (k, *job["window"])
+        rec = dict(cell=job["cell_id"][present], year=job["year"], month=mo, n_px=npx, expected_px=expected)
+        rec["share_ensemble"] = zonal.count(ids, n, read_at(ds, C.ET_ENSEMBLE, t) != FILL)[present] / expected
+        for m in C.ET_MODELS:
+            rec[f"share_{m}"] = zonal.count(ids, n, valid_pixels(ds, m, t))[present] / expected
+        out.append(pd.DataFrame(rec))
+    ds.close()
+    return pd.concat(out, ignore_index=True) if out else None
+
+
 def run(ctx):
     import pandas as pd
     from .. import config as C
     from .. import definitions as DEF
-    from ..common import report, zonal
-    from .et_cells import scoped_cells, iter_tile_months, valid_pixels, read_at, save_part, FILL
+    from ..common import report
+    from .et_cells import scoped_cells, tile_jobs, run_jobs, save_part
 
     # ══════ STEP 1.4-1  cells in scope ══════
     cells, scope = scoped_cells(ctx)
     n = len(cells)
     parts = f"{ctx.out}/parts"
     os.makedirs(parts, exist_ok=True)
-    done = set(os.listdir(parts))
     ctx.log.info("STEP 1.4-1  %d cells in scope", int(scope.sum()))
 
     # ══════ STEP 1.4-2  per tile-month and model: share of the cell's pixels valid with count > 0 ══════
-    buf, cur = [], None
-
-    def flush(key):
-        if buf:
-            save_part(ctx, pd.concat(buf, ignore_index=True), parts, key)
-            buf.clear()
-
-    for tile, y, mo, ids, ds, t in iter_tile_months(ctx, cells, scope, C.PANEL_YEARS, C.SEASON_MONTHS):
-        key = f"{tile}_{y}"
-        if f"{key}.parquet" in done:
-            continue
-        if cur is not None and key != cur:
-            flush(cur)
-        cur = key
-        present = np.unique(ids[ids >= 0])
-        npx = zonal.count(ids, n)[present]
-        rec = dict(cell=cells.cell_id.to_numpy()[present], year=y, month=mo, n_px=npx,
-                   expected_px=(cells.area_ha.to_numpy()[present] * 1e4 / C.PIXEL_M ** 2).round().astype(int))
-        ens_valid = read_at(ds, C.ET_ENSEMBLE, t) != FILL
-        rec["share_ensemble"] = zonal.count(ids, n, ens_valid)[present] / rec["expected_px"]
-        for m in C.ET_MODELS:
-            rec[f"share_{m}"] = zonal.count(ids, n, valid_pixels(ds, m, t))[present] / rec["expected_px"]
-        buf.append(pd.DataFrame(rec))
-        ctx.check_budget()
-    flush(cur)
+    jobs = tile_jobs(ctx, cells, scope, C.PANEL_YEARS, C.SEASON_MONTHS, done=set(os.listdir(parts)), n=n,
+                     cell_id=cells.cell_id.to_numpy(), area_ha=cells.area_ha.to_numpy())
+    for key, part in run_jobs(ctx, coverage_part, jobs):
+        if part is not None:
+            save_part(ctx, part, parts, key)
     files = sorted(os.listdir(parts))
     cov = pd.concat([pd.read_parquet(os.path.join(parts, f)) for f in files], ignore_index=True)
     # a cell split over two tiles: add its pieces

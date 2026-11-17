@@ -113,7 +113,8 @@ def _temp_log():
     from pilot import decisions as D
     d = tempfile.mkdtemp()
     p = os.path.join(d, "decisions.yaml")
-    shutil.copy(D.PATH, p)
+    with open(D.PATH, encoding="utf-8") as f, open(p, "w", encoding="utf-8", newline="\n") as g:
+        g.write(f.read().replace("status: fixed", "status: proposed"))     # the tests start from a proposed log
     return p, d
 
 
@@ -225,9 +226,27 @@ def test_reliability_of_a_mismeasured_regressor():
     rs = np.random.default_rng(7)
     g = np.repeat(np.arange(200), 10)
     real, err = rs.normal(size=2000), rs.normal(size=2000)
-    lam = reliability(stats.within(real, [g]), err, [g])
+    lam = reliability(stats.within(real, [g]), err, [g])[0, 0]
     assert 0.45 < lam < 0.55, lam
-    assert reliability(stats.within(real, [g]), np.zeros(2000), [g]) == 1.0
+    assert abs(reliability(stats.within(real, [g]), np.zeros(2000), [g])[0, 0] - 1.0) < 1e-9
+
+
+def test_reliability_corrects_regressors_that_share_an_error():
+    """Two regressors carrying one error (a and a*z, as A and A x deficit do): OLS on the mismeasured pair is
+    biased, and the attenuation matrix brings the coefficients back."""
+    from pilot.common import stats
+    from pilot.phase2.c2_6_precision import reliability
+    rs = np.random.default_rng(11)
+    n = 20000
+    a, z, u = rs.normal(size=n), rs.uniform(0.5, 1.5, n), rs.normal(scale=0.7, size=n)
+    X, U = np.column_stack([a, a * z]), np.column_stack([u, u * z])
+    beta = np.array([1.0, -2.0])
+    y = X @ beta + rs.normal(scale=0.1, size=n)
+    g = np.zeros(n, int)
+    b_obs = stats.fe_ols(y, X + U, fe=[g])["beta"]
+    L = reliability(stats.within(X, [g]), U, [g])
+    assert np.abs(b_obs - beta).max() > 0.3, b_obs
+    assert np.abs(np.linalg.solve(L, b_obs) - beta).max() < 0.1, np.linalg.solve(L, b_obs)
 
 
 def test_et_by_thickness_recovers_a_planted_response():
@@ -260,3 +279,39 @@ def test_blinding_names_of_thickness():
         raise AssertionError("the gate must refuse an ET table with a thickness column")
     except blinding.BlindingError:
         pass
+
+
+def test_main_model_recovers_a_planted_thickness_effect():
+    """Synthetic panel: peak-month ET = cell + county-year effects + b * A_true * S + noise; A observed with a
+    per-cell base error and a per-year water-table error. The corrected C1 estimate recovers b; the uncorrected
+    one is attenuated (Check 2.6's reliability), and the contrast is b * (A_thin - A_thick) * (S_q10 - S_med)."""
+    import pandas as pd
+    from pilot.phase3 import main_models as MM
+    rs = np.random.default_rng(7)
+    n_c, n_cell, years = 14, 40, list(range(2016, 2025))
+    cells = pd.DataFrame(dict(cell_id=[f"c{i}" for i in range(n_c * n_cell)],
+                              county=np.repeat([f"20{i:03d}" for i in range(n_c)], n_cell)))
+    cells["A_true"] = rs.uniform(5, 100, len(cells))
+    cells["base_err"] = rs.normal(0, 8, len(cells))
+    cells["rzws_mm"], cells["corn_years"] = rs.uniform(150, 350, len(cells)), rs.integers(2, 4, len(cells))
+    cells["fe"] = rs.normal(0, 20, len(cells))
+    cy = pd.DataFrame([(c, y) for c in cells.county.unique() for y in years], columns=["county", "year"])
+    cy["S"], cy["deficit_season_mm"], cy["fe_cy"] = rs.normal(0, 1, len(cy)), rs.normal(550, 80, len(cy)), \
+        rs.normal(0, 15, len(cy))
+    d = cells.merge(cy, on="county")
+    b = 0.20                                                    # mm of peak-month ET per (m x SD of S)
+    d["et_ensemble_mad"] = d.fe + d.fe_cy + b * d.A_true * d.S + rs.normal(0, 8, len(d))
+    d["wte_se_m"], d["base_se_m"] = 3.0, 8.0
+    d["A_m"] = d.A_true + d.base_err + rs.normal(0, 3, len(d))
+    cut = np.quantile(d.groupby("cell_id").A_m.mean(), [1 / 3, 2 / 3])
+    mean_a = d.groupby("cell_id").A_m.transform("mean")
+    d["A_third"] = np.where(mean_a <= cut[0], "thin", np.where(mean_a <= cut[1], "middle", "thick"))
+    d["x5070"], d["y5070"], d["gmd"] = 0.0, 0.0, 1
+    est, con = MM.estimate(d, "et_ensemble_mad", "C1", "sm", ["S"], np.random.default_rng(1))
+    e = pd.DataFrame(est).set_index("term")
+    assert abs(e.loc["A:S", "beta_corrected"] - b) < 0.03, e.loc["A:S"]
+    assert e.loc["A:S", "beta"] < e.loc["A:S", "beta_corrected"]          # uncorrected is attenuated
+    c = pd.DataFrame(con)
+    c = c[c.corrected.astype(bool)].iloc[0]
+    expect = e.loc["A:S", "beta_corrected"] * (c["A_thin_m"] - c["A_thick_m"]) * (c["eval_point"] - c["median"])
+    assert abs(c.value_mm - expect) < 1e-6 and c.lo_mm < c.value_mm < c.hi_mm
