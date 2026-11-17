@@ -82,10 +82,13 @@ def freeze(by, supervisor, deviation=None):
              if not l.endswith("freeze.json") and "/results/" not in l and "__pycache__" not in l]
     if dirty:
         raise PipelineStop("commit the pilot code first; uncommitted:\n  " + "\n  ".join(dirty[:20]))
-    rec = make_record(by, supervisor, _git("rev-parse", "HEAD"), previous=record(), deviation=deviation)
+    # a record git does not track is an attempt that stopped before its commit, not an earlier freeze
+    tracked = subprocess.run(["git", "ls-files", "--error-unmatch", PATH], cwd=REPO, capture_output=True).returncode == 0
+    rec = make_record(by, supervisor, _git("rev-parse", "HEAD"), previous=record() if tracked else None,
+                      deviation=deviation)
     with open(PATH, "w", encoding="utf-8") as f:
         json.dump(rec, f, indent=1)
-    _git("add", PATH)
+    _git("add", "-f", PATH)                           # -f: the repository ignores **/*.json; this one must be tracked
     _git("commit", "-m", f"Pilot freeze {rec['frozen_on']} (by {by}, supervisor {supervisor})"
          + (f"\n\nDeviation: {deviation}" if deviation else ""))
     _git("tag", "-a", rec["tag"], "-m", f"Pilot freeze: decisions {rec['decisions_sha256'][:12]}")
