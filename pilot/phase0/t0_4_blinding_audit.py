@@ -10,7 +10,7 @@ import os
 import re
 import subprocess
 
-SKIP_DIRS = {".git", "__pycache__", "node_modules", "worktrees", ".kilo", ".claude", "pilot", "pilot test",
+SKIP_DIRS = {".git", "__pycache__", "node_modules", "worktrees", ".kilo", ".", "pilot", "pilot test",
              "merged_datasets", "zarr", "plan_v3_build", "data audit"}
 CODE_EXT = (".py", ".ipynb", ".r", ".rmd", ".md", ".txt", ".json", ".csv", ".log")
 ET_RE = re.compile(r"(?i)\b(evapotranspiration|ssebop|openet|et_ensemble|ecostress|echo-?et|residual[ _-]?et|"
